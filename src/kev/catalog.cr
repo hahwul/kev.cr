@@ -1,3 +1,4 @@
+require "csv"
 require "json"
 require "./error"
 require "./vulnerability"
@@ -68,6 +69,114 @@ module KEV
       parse(input)
     rescue Error | ::JSON::ParseException
       nil
+    end
+
+    # Column names CISA emits in the CSV feed, in source order. The CSV
+    # has no metadata (catalogVersion, dateReleased, count), so callers
+    # supply those via the `catalog_version` / `date_released` arguments —
+    # defaults give a stable but obviously-synthetic identity.
+    CSV_HEADERS = %w[
+      cveID
+      vendorProject
+      product
+      vulnerabilityName
+      dateAdded
+      shortDescription
+      requiredAction
+      dueDate
+      knownRansomwareCampaignUse
+      notes
+      cwes
+    ]
+
+    # CWEs inside the CSV `cwes` column come comma-and-space-separated —
+    # e.g. `"CWE-22, CWE-434"`. This splitter is permissive about the gap.
+    private CSV_CWE_SEPARATOR = /\s*,\s*/
+
+    # Parse the CSV form of the catalog. CISA publishes a CSV alongside
+    # the JSON feed; it carries the same per-row fields but no
+    # catalog-level metadata, so the metadata defaults are synthetic.
+    #
+    # ```
+    # catalog = KEV::Catalog.parse_csv(File.read("kev.csv"))
+    # ```
+    def self.parse_csv(
+      input : String | IO,
+      catalog_version : String = "csv",
+      date_released : Time = Time.utc,
+      title : String? = nil,
+    ) : Catalog
+      csv = ::CSV.new(input, headers: true, strip: false)
+      missing = CSV_HEADERS - csv.headers
+      unless missing.empty?
+        raise ParseError.new("CSV is missing required column(s): #{missing.join(", ")}")
+      end
+
+      vulns = [] of Vulnerability
+      while csv.next
+        cve_id = csv["cveID"]
+        unless Vulnerability::CVE_ID_PATTERN.matches?(cve_id)
+          raise InvalidValueError.new("cveID", cve_id)
+        end
+
+        # CSV blanks: there is no in-band way to tell `""` from absent, so
+        # an empty cell maps to `nil` for optional fields. The JSON path
+        # still preserves `""` verbatim, which matches that feed's
+        # behavior (it omits the key when absent, never emits `""`).
+        ransomware_raw = blank_to_nil(csv["knownRansomwareCampaignUse"])
+        cwes = csv_cwes(csv["cwes"], cve_id)
+
+        vulns << Vulnerability.new(
+          cve_id: cve_id,
+          vendor_project: csv["vendorProject"],
+          product: csv["product"],
+          vulnerability_name: csv["vulnerabilityName"],
+          date_added: parse_csv_date(csv["dateAdded"], "dateAdded", cve_id),
+          short_description: csv["shortDescription"],
+          required_action: csv["requiredAction"],
+          due_date: parse_csv_date(csv["dueDate"], "dueDate", cve_id),
+          known_ransomware_campaign_use: ransomware_raw.try { |s| RansomwareUse.parse?(s) },
+          known_ransomware_campaign_use_raw: ransomware_raw,
+          notes: blank_to_nil(csv["notes"]),
+          cwes: cwes,
+        )
+      end
+
+      new(
+        catalog_version: catalog_version,
+        date_released: date_released,
+        count: vulns.size,
+        vulnerabilities: vulns,
+        title: title,
+      )
+    end
+
+    # Non-raising CSV parse — returns nil on malformed input.
+    def self.parse_csv?(input : String | IO, **kwargs) : Catalog?
+      parse_csv(input, **kwargs)
+    rescue Error | ::CSV::MalformedCSVError
+      nil
+    end
+
+    private def self.blank_to_nil(value : String) : String?
+      value.empty? ? nil : value
+    end
+
+    private def self.csv_cwes(raw : String, cve_id : String) : Array(String)
+      return [] of String if raw.empty?
+      raw.split(CSV_CWE_SEPARATOR).map do |code|
+        stripped = code.strip
+        unless Vulnerability::CWE_PATTERN.matches?(stripped)
+          raise InvalidValueError.new("cwes[#{cve_id}]", stripped)
+        end
+        stripped
+      end
+    end
+
+    private def self.parse_csv_date(raw : String, field : String, cve_id : String) : Time
+      Time.parse_utc(raw, "%Y-%m-%d")
+    rescue Time::Format::Error
+      raise ParseError.new("malformed #{field} '#{raw}' for #{cve_id}")
     end
 
     def self.from_json_any(any : ::JSON::Any) : Catalog
@@ -202,6 +311,22 @@ module KEV
     # Start a chainable `Query` over this catalog's entries.
     def query : Query
       Query.new(vulnerabilities)
+    end
+
+    # Run `Vulnerability#validate!` on every entry. Use after constructing
+    # a `Catalog` from non-feed sources (e.g. fixtures, partial JSON,
+    # programmatic edits) to confirm schema-level shape compliance.
+    # Raises on the first offending entry.
+    def validate! : Nil
+      vulnerabilities.each(&.validate!)
+    end
+
+    # `true` when every entry passes `Vulnerability#valid?`.
+    def valid? : Bool
+      validate!
+      true
+    rescue ParseError
+      false
     end
 
     # JSON serialization in the exact shape of the CISA feed. Round-trips

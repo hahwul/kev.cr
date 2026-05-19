@@ -222,6 +222,72 @@ describe KEV::Catalog do
     end
   end
 
+  describe "#validate! / #valid?" do
+    it "validates a well-formed catalog from the fixture" do
+      c = SpecFixtures.sample_catalog
+      c.valid?.should be_true
+      c.validate!.should be_nil
+    end
+
+    it "fails when any contained vulnerability fails its schema check" do
+      c = SpecFixtures.sample_catalog
+      c.vulnerabilities << KEV::Vulnerability.new(
+        cve_id: "bogus",
+        vendor_project: "x", product: "x", vulnerability_name: "x",
+        date_added: Time.utc(2020, 1, 1), short_description: "x",
+        required_action: "x", due_date: Time.utc(2020, 1, 15),
+      )
+      c.valid?.should be_false
+      expect_raises(KEV::InvalidValueError, /cveID/) { c.validate! }
+    end
+  end
+
+  describe ".parse_csv" do
+    it "parses a minimal CSV with header + one row" do
+      csv = <<-CSV
+        cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes
+        CVE-2021-44228,Apache,Log4j2,Apache Log4j2 RCE,2021-12-10,JNDI vuln,Apply updates,2021-12-24,Known,https://logging.apache.org,"CWE-20, CWE-917"
+        CVE-2014-0160,OpenSSL,OpenSSL,Heartbleed,2022-05-04,Heartbleed,Apply updates,2022-05-25,Unknown,,
+        CSV
+      catalog = KEV::Catalog.parse_csv(csv, catalog_version: "test", date_released: Time.utc(2024, 1, 1))
+      catalog.size.should eq(2)
+      log4j = catalog["CVE-2021-44228"]
+      log4j.vendor_project.should eq("Apache")
+      log4j.cwes.should eq(["CWE-20", "CWE-917"])
+      log4j.known_ransomware?.should be_true
+
+      heartbleed = catalog["CVE-2014-0160"]
+      heartbleed.notes.should be_nil
+      heartbleed.cwes.should be_empty
+      heartbleed.known_ransomware_campaign_use.should eq(KEV::RansomwareUse::Unknown)
+    end
+
+    it "raises when a required column is missing from the header" do
+      csv = "cveID,vendorProject\nCVE-2021-44228,Apache\n"
+      expect_raises(KEV::ParseError, /missing required column/) do
+        KEV::Catalog.parse_csv(csv)
+      end
+    end
+
+    it "validates cveID and cwes patterns at parse time" do
+      bad_cve = <<-CSV
+        cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes
+        NOT-A-CVE,x,x,x,2024-01-01,x,x,2024-01-15,,,
+        CSV
+      expect_raises(KEV::InvalidValueError, /cveID/) { KEV::Catalog.parse_csv(bad_cve) }
+
+      bad_cwe = <<-CSV
+        cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes
+        CVE-2024-0001,x,x,x,2024-01-01,x,x,2024-01-15,,,"CWE-79, oops"
+        CSV
+      expect_raises(KEV::InvalidValueError, /cwes/) { KEV::Catalog.parse_csv(bad_cwe) }
+    end
+
+    it ".parse_csv? returns nil on malformed input" do
+      KEV::Catalog.parse_csv?("not csv at all\n,,,").should be_nil
+    end
+  end
+
   describe "defensive bounds" do
     it "raises KEV::ParseError when count is outside Int32 range" do
       huge = %({"catalogVersion":"x","dateReleased":"2024-01-01T00:00:00Z","count":99999999999999,"vulnerabilities":[]})

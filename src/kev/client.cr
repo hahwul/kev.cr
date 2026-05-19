@@ -27,19 +27,33 @@ module KEV
   # end
   # ```
   class Client
-    # CISA's published feed URL. CISA also publishes a CSV; this library
-    # consumes the JSON form, which is the schema-bound source of truth.
+    # CISA's published JSON feed URL — the schema-bound source of truth.
     DEFAULT_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+
+    # CISA's CSV mirror of the same catalog. Same per-row data, no
+    # catalog-level metadata (`catalogVersion`, `dateReleased`, `count`).
+    DEFAULT_CSV_URL = "https://www.cisa.gov/sites/default/files/csv/known_exploited_vulnerabilities.csv"
 
     # `User-Agent` sent on every request. Identifies the client so CISA can
     # contact maintainers if the feed format changes — and so this library
     # is not silently lumped in with anonymous scrapers.
     DEFAULT_USER_AGENT = "kev.cr/#{VERSION} (+https://github.com/hahwul/kev.cr)"
 
+    # Default ceiling for redirect chasing in `fetch`. Most KEV requests
+    # answer 200 directly; we cap follow-throughs at 3 so a misconfigured
+    # mirror cannot loop forever.
+    DEFAULT_MAX_REDIRECTS = 0
+
     getter url : String
     getter user_agent : String
     getter connect_timeout : Time::Span
     getter read_timeout : Time::Span
+
+    # Maximum number of HTTP redirects to follow. `0` (the default) keeps
+    # the original strict behavior — a `3xx` response raises `FetchError`.
+    # Set this when pointing the client at a mirror or proxy that issues a
+    # canonical redirect.
+    getter max_redirects : Int32
 
     # Last `ETag` observed on a successful fetch (or `nil` if the server
     # did not return one). Used by `fetch_if_modified`.
@@ -53,7 +67,9 @@ module KEV
       @user_agent : String = DEFAULT_USER_AGENT,
       @connect_timeout : Time::Span = 10.seconds,
       @read_timeout : Time::Span = 30.seconds,
+      @max_redirects : Int32 = DEFAULT_MAX_REDIRECTS,
     )
+      raise FetchError.new("max_redirects must be >= 0 (got #{@max_redirects})") if @max_redirects < 0
     end
 
     # Fetch and parse the catalog. Raises `FetchError` on any transport
@@ -92,12 +108,38 @@ module KEV
       new(url).fetch
     end
 
-    private def get(extra_headers : HTTP::Headers, accept_304 : Bool = false) : HTTP::Client::Response
-      uri = URI.parse(url)
-      raise FetchError.new("KEV feed URL must be http(s): #{url}") unless {"http", "https"}.includes?(uri.scheme)
+    # Fetch the CSV form of the catalog from the configured `url`. CSV has
+    # no catalog metadata, so the synthesized `catalog_version` and
+    # `date_released` arguments flow through to `Catalog.parse_csv`.
+    def fetch_csv(catalog_version : String = "csv", date_released : Time = Time.utc, title : String? = nil) : Catalog
+      response = get(extra_headers: HTTP::Headers.new, accept: "text/csv")
+      capture_validators(response)
+      Catalog.parse_csv(response.body, catalog_version: catalog_version, date_released: date_released, title: title)
+    end
+
+    # One-shot CSV fetch using a fresh client pointed at the CSV mirror.
+    def self.fetch_csv(url : String = DEFAULT_CSV_URL) : Catalog
+      new(url).fetch_csv
+    end
+
+    private def get(extra_headers : HTTP::Headers, accept_304 : Bool = false, accept : String = "application/json") : HTTP::Client::Response
+      do_get(url, extra_headers, accept_304, accept, redirects_left: max_redirects)
+    end
+
+    private def do_get(
+      target_url : String,
+      extra_headers : HTTP::Headers,
+      accept_304 : Bool,
+      accept : String,
+      redirects_left : Int32,
+    ) : HTTP::Client::Response
+      uri = URI.parse(target_url)
+      unless {"http", "https"}.includes?(uri.scheme)
+        raise FetchError.new("KEV feed URL must be http(s): #{target_url}")
+      end
 
       headers = HTTP::Headers{
-        "Accept"     => "application/json",
+        "Accept"     => accept,
         "User-Agent" => user_agent,
       }
       # Preserve multi-value headers — `HTTP::Headers#add` appends to the
@@ -114,14 +156,22 @@ module KEV
       begin
         response = client.get(uri.request_target, headers: headers)
       rescue ex : IO::Error | Socket::Error | OpenSSL::SSL::Error
-        raise FetchError.new("KEV feed request failed: #{ex.message}")
+        raise FetchError.new("KEV feed request to #{target_url} failed: #{ex.message}")
       ensure
         client.close
       end
 
       return response if accept_304 && response.status_code == 304
+
+      if response.status.redirection? && redirects_left > 0
+        location = response.headers["Location"]?
+        raise FetchError.new("KEV feed redirect from #{target_url} missing Location header") unless location
+        next_url = URI.parse(location).absolute? ? location : URI.parse(target_url).resolve(location).to_s
+        return do_get(next_url, extra_headers, accept_304, accept, redirects_left - 1)
+      end
+
       unless response.success?
-        raise FetchError.new("KEV feed returned HTTP #{response.status_code} #{response.status_message}")
+        raise FetchError.new("KEV feed at #{target_url} returned HTTP #{response.status_code} #{response.status_message}")
       end
       response
     end

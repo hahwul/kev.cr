@@ -10,10 +10,14 @@ parsing, querying, fetching, and JSON serialization for the official feed.
 - Type-safe `Vulnerability` and `Catalog` models
 - Chainable `Query` builder for vendor / product / CWE / ransomware /
   due-date filters
-- Built-in HTTP `Client` with `ETag` / `If-Modified-Since` support
+- Built-in HTTP `Client` with `ETag` / `If-Modified-Since` support,
+  optional redirect-following, and URL-rich error messages
 - Lossless JSON round-trips against the canonical CISA feed —
   including unknown-but-valid `knownRansomwareCampaignUse` strings
   preserved on `known_ransomware_campaign_use_raw`
+- CSV mirror support via `Catalog.parse_csv` / `Client.fetch_csv`
+- Explicit `validate!` / `valid?` for re-running schema checks on
+  programmatically constructed records
 
 ## Installation
 
@@ -50,6 +54,25 @@ puts "#{catalog.size} entries, released #{catalog.date_released}"
 client = KEV::Client.new
 first = client.fetch
 later = client.fetch_if_modified  # => nil when the feed is unchanged
+
+# CSV mirror — same per-row data, no catalog metadata:
+csv_catalog = KEV::Client.fetch_csv
+
+# Follow redirects (off by default — set when pointing at a mirror):
+KEV::Client.new(url: "https://example.com/kev.json", max_redirects: 3).fetch
+```
+
+### Validate programmatic records
+
+`from_json` enforces every schema-level constraint, but constructor and
+in-place edits bypass that path. `validate!` / `valid?` re-run the
+schema checks on demand:
+
+```crystal
+catalog.validate!         # raises KEV::InvalidValueError on the first bad entry
+catalog.valid?            # => true / false
+
+vuln.validate!            # same, scoped to one entry
 ```
 
 ### Look up and filter
@@ -111,7 +134,10 @@ methods work directly.
 
 `Vulnerability#to_json` and `Catalog#to_json` emit output that matches the
 canonical CISA feed shape — field names and order are preserved, and the
-result round-trips through `KEV::Catalog.parse`:
+result round-trips through `KEV::Catalog.parse`. Empty optional strings
+(`notes: ""`) and unknown-but-valid `knownRansomwareCampaignUse` values
+are preserved verbatim so byte-level diffs against the upstream feed do
+not show spurious deltas.
 
 ```crystal
 require "json"
