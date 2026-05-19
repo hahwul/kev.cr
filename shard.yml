@@ -1,0 +1,17 @@
+name: kev
+version: 0.1.0
+description: |
+  A Crystal implementation of the CISA Known Exploited Vulnerabilities (KEV)
+  catalog. Parses, queries, fetches, and serializes the official feed
+  published at https://www.cisa.gov/known-exploited-vulnerabilities-catalog.
+
+authors:
+  - hahwul <hahwul@gmail.com>
+
+crystal: '>= 1.19.0'
+
+license: MIT
+
+repository: https://github.com/hahwul/kev.cr
+homepage: https://github.com/hahwul/kev.cr
+documentation: https://github.com/hahwul/kev.cr
