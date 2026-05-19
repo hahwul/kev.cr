@@ -104,9 +104,28 @@ module KEV
       vulnerabilities.unsafe_fetch(index)
     end
 
-    # Look up by CVE id. O(1) after first call (memoised index).
+    # Look up by CVE id. O(1) after the first call (the CVE → entry index
+    # is memoised on first lookup).
+    #
+    # The memo is built lazily and not synchronised — if you share a
+    # `Catalog` across preemptive threads, call `find` (or any other
+    # by-CVE lookup) once on the owning thread before publishing the
+    # reference, or guard the catalog with your own mutex.
+    #
+    # The memo auto-invalidates when the underlying `vulnerabilities`
+    # array grows or shrinks (push/pop/concat). If you replace an entry
+    # *in place* with a different `cve_id`, the size doesn't change and
+    # the index won't notice — call `reindex!` explicitly in that case.
     def find(cve_id : String) : Vulnerability?
       cve_index[cve_id]?
+    end
+
+    # Drop the memoised CVE → entry index. The next `find` / `[]` call
+    # rebuilds it from the current `vulnerabilities` array. Use this
+    # after in-place edits that change a `cve_id` without changing the
+    # array's length.
+    def reindex! : Nil
+      @by_cve = nil
     end
 
     # `find` that raises `KeyError` on miss — mirrors `Hash#[]`.
@@ -212,23 +231,24 @@ module KEV
     end
 
     private def cve_index : Hash(String, Vulnerability)
-      @by_cve ||= vulnerabilities.each_with_object({} of String => Vulnerability) do |v, h|
+      cached = @by_cve
+      # Cheap staleness check: if a caller added or removed entries since
+      # the memo was built, the cached hash and the live array no longer
+      # agree on size. Drop the memo and rebuild.
+      return cached if cached && cached.size == vulnerabilities.size
+      @by_cve = vulnerabilities.each_with_object({} of String => Vulnerability) do |v, h|
         h[v.cve_id] = v
       end
     end
 
-    # CISA emits ISO-8601 with millisecond precision and a `Z` suffix.
-    # Crystal's `Time.parse_iso8601` handles both this and the related
-    # offset variants, so we delegate. Falls back to a relaxed parser for
-    # the rare entries with a four-digit sub-second component (e.g.
-    # `".6086"`).
+    # CISA emits ISO-8601 with `Z` suffix and a fractional-seconds field
+    # whose precision drifts (the feed has been seen with 3 *and* 4 digits,
+    # e.g. `".608Z"` and `".6086Z"`). `Time.parse_iso8601` only accepts up
+    # to millisecond precision, so trim any longer fraction up front rather
+    # than parse-then-retry on exception.
     private def self.parse_datetime(raw : String) : Time
-      Time.parse_iso8601(raw)
-    rescue Time::Format::Error
-      # The feed has been seen to emit four sub-second digits (".6086Z").
-      # Strip extra precision down to milliseconds before retrying.
-      cleaned = raw.sub(/\.(\d{3})\d+(Z|[+\-]\d)/, ".\\1\\2")
-      Time.parse_iso8601(cleaned)
+      normalised = raw.sub(/\.(\d{3})\d+(Z|[+\-]\d)/, ".\\1\\2")
+      Time.parse_iso8601(normalised)
     rescue ex : Time::Format::Error
       raise ParseError.new("malformed dateReleased '#{raw}': #{ex.message}")
     end
@@ -251,6 +271,9 @@ module KEV
     private def self.require_int(obj, key : String) : Int32
       raw = obj[key]? || raise MissingFieldError.new(key, "catalog")
       i = raw.as_i64? || raise ParseError.new("catalog field '#{key}' is not an integer")
+      if i < Int32::MIN || i > Int32::MAX
+        raise ParseError.new("catalog field '#{key}' value #{i} is out of Int32 range")
+      end
       i.to_i32
     end
   end

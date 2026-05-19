@@ -144,5 +144,95 @@ describe KEV::Catalog do
         a.to_h.should eq(b.to_h)
       end
     end
+
+    it "emits cwes as [] for entries with explicit empty array in source" do
+      # Live KEV feed always emits `"cwes": []` for entries with no CWEs.
+      # Confirmed against the 2026-05-15 feed: 167/1592 entries take this
+      # shape. The library must preserve the key (audit cycle finding).
+      json = <<-JSON
+        {
+          "catalogVersion": "1.0",
+          "dateReleased": "2024-01-01T00:00:00.000Z",
+          "count": 1,
+          "vulnerabilities": [
+            {
+              "cveID": "CVE-2020-0001",
+              "vendorProject": "ACME",
+              "product": "Widget",
+              "vulnerabilityName": "Foo",
+              "dateAdded": "2020-01-01",
+              "shortDescription": "x",
+              "requiredAction": "x",
+              "dueDate": "2020-01-15",
+              "cwes": []
+            }
+          ]
+        }
+      JSON
+
+      emitted = JSON.parse(KEV::Catalog.parse(json).to_json)
+      entry = emitted["vulnerabilities"].as_a.first.as_h
+      entry["cwes"]?.should_not be_nil
+      entry["cwes"].as_a.should be_empty
+    end
+
+    it "tolerates a feed with no top-level title and no cwes anywhere" do
+      json = <<-JSON
+        {
+          "catalogVersion": "1.0",
+          "dateReleased": "2024-01-01T00:00:00.000Z",
+          "count": 0,
+          "vulnerabilities": []
+        }
+      JSON
+      KEV::Catalog.parse(json).should be_a(KEV::Catalog)
+    end
+  end
+
+  describe "CVE index lifecycle" do
+    it "invalidates the memo when the vulnerabilities array grows" do
+      catalog = SpecFixtures.sample_catalog
+      catalog.find("CVE-2021-44228").should_not be_nil # primes memo
+
+      synthetic = KEV::Vulnerability.new(
+        cve_id: "CVE-9999-1", vendor_project: "X", product: "X",
+        vulnerability_name: "x", date_added: Time.utc(2030, 1, 1),
+        short_description: "x", required_action: "x",
+        due_date: Time.utc(2030, 1, 15),
+      )
+      catalog.vulnerabilities << synthetic
+      catalog.find("CVE-9999-1").should eq(synthetic)
+    end
+
+    it "#reindex! recovers from in-place edits that don't change array length" do
+      catalog = SpecFixtures.sample_catalog
+      catalog.find("CVE-2021-44228").should_not be_nil # primes memo
+
+      replacement = KEV::Vulnerability.new(
+        cve_id: "CVE-9999-REPLACED", vendor_project: "X", product: "X",
+        vulnerability_name: "x", date_added: Time.utc(2030, 1, 1),
+        short_description: "x", required_action: "x",
+        due_date: Time.utc(2030, 1, 15),
+      )
+      catalog.vulnerabilities[0] = replacement
+      # Size didn't change → memo doesn't auto-invalidate.
+      catalog.find("CVE-9999-REPLACED").should be_nil
+      catalog.reindex!
+      catalog.find("CVE-9999-REPLACED").should eq(replacement)
+    end
+  end
+
+  describe "defensive bounds" do
+    it "raises KEV::ParseError when count is outside Int32 range" do
+      huge = %({"catalogVersion":"x","dateReleased":"2024-01-01T00:00:00Z","count":99999999999999,"vulnerabilities":[]})
+      expect_raises(KEV::ParseError, /Int32/) do
+        KEV::Catalog.parse(huge)
+      end
+    end
+
+    it "Catalog.parse? returns nil instead of leaking OverflowError" do
+      huge = %({"catalogVersion":"x","dateReleased":"2024-01-01T00:00:00Z","count":99999999999999,"vulnerabilities":[]})
+      KEV::Catalog.parse?(huge).should be_nil
+    end
   end
 end

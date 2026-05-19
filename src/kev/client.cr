@@ -1,4 +1,5 @@
 require "http/client"
+require "openssl"
 require "uri"
 require "./error"
 require "./catalog"
@@ -55,8 +56,16 @@ module KEV
     )
     end
 
-    # Fetch and parse the catalog. Raises `FetchError` on any transport or
-    # HTTP-level failure and `ParseError` on a malformed body.
+    # Fetch and parse the catalog. Raises `FetchError` on any transport
+    # or HTTP-level failure (including a non-2xx response — see below)
+    # and `KEV::ParseError` on a schema-malformed body.
+    # `JSON::ParseException` propagates unchanged for raw JSON syntax
+    # errors, matching the cvss.cr precedent.
+    #
+    # NOTE: redirects are *not* followed. CISA's canonical feed URL has
+    # been stable, but if you point the client at a URL that responds
+    # with `3xx` you will get a `FetchError`, not the redirected body.
+    # Resolve the final URL yourself and pass it to `initialize`.
     def fetch : Catalog
       response = get(extra_headers: HTTP::Headers.new)
       capture_validators(response)
@@ -91,7 +100,12 @@ module KEV
         "Accept"     => "application/json",
         "User-Agent" => user_agent,
       }
-      extra_headers.each { |k, v| headers[k] = v.join(",") }
+      # Preserve multi-value headers — `HTTP::Headers#add` appends to the
+      # existing array, where the previous `headers[k] = v.join(",")` would
+      # have flattened multiple values into one comma-joined string.
+      extra_headers.each do |k, values|
+        values.each { |v| headers.add(k, v) }
+      end
 
       client = HTTP::Client.new(uri)
       client.connect_timeout = connect_timeout
@@ -99,7 +113,7 @@ module KEV
 
       begin
         response = client.get(uri.request_target, headers: headers)
-      rescue ex : IO::Error | Socket::Error
+      rescue ex : IO::Error | Socket::Error | OpenSSL::SSL::Error
         raise FetchError.new("KEV feed request failed: #{ex.message}")
       ensure
         client.close
