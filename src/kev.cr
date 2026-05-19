@@ -22,6 +22,8 @@ require "./kev/ransomware_use"
 require "./kev/vulnerability"
 require "./kev/query"
 require "./kev/catalog"
+require "./kev/diff"
+require "./kev/stats"
 require "./kev/client"
 
 module KEV

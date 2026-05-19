@@ -222,6 +222,80 @@ describe KEV::Catalog do
     end
   end
 
+  describe "convenience helpers" do
+    catalog = SpecFixtures.sample_catalog
+
+    it "#search matches across cve_id / name / description / vendor / product" do
+      catalog.search("log4j").map(&.cve_id).should eq(["CVE-2021-44228"])
+      catalog.search("outlook").map(&.cve_id).should eq(["CVE-2023-23397"])
+      catalog.search("heartbeat").map(&.cve_id).should eq(["CVE-2014-0160"])
+      # case-insensitive
+      catalog.search("APACHE").map(&.cve_id).should eq(["CVE-2021-44228"])
+    end
+
+    it "#group_by_year buckets entries by their CVE year" do
+      grouped = catalog.group_by_year
+      grouped[2021].map(&.cve_id).should eq(["CVE-2021-44228"])
+      grouped[2014].map(&.cve_id).should eq(["CVE-2014-0160"])
+    end
+
+    it "#group_by_vendor uses verbatim vendor strings" do
+      grouped = catalog.group_by_vendor
+      grouped["Apache"].size.should eq(1)
+      grouped["Microsoft"].size.should eq(1)
+    end
+
+    it "#group_by_cwe places multi-CWE vulns under each code" do
+      grouped = catalog.group_by_cwe
+      grouped["CWE-20"].map(&.cve_id).should eq(["CVE-2021-44228"])
+      grouped["CWE-917"].map(&.cve_id).should eq(["CVE-2021-44228"])
+      grouped["CWE-294"].map(&.cve_id).should eq(["CVE-2023-23397"])
+    end
+
+    it "#group_by_ransomware splits Known from Unknown" do
+      grouped = catalog.group_by_ransomware
+      grouped[KEV::RansomwareUse::Known].map(&.cve_id).sort.should eq(["CVE-2021-44228", "CVE-2023-23397"])
+      grouped[KEV::RansomwareUse::Unknown].map(&.cve_id).sort.should eq(["CVE-2014-0160", "CVE-2024-21887"])
+    end
+
+    it "#latest returns the N newest entries, newest first" do
+      latest = catalog.latest(2)
+      latest.size.should eq(2)
+      latest.first.cve_id.should eq("CVE-2024-21887")
+      latest.first.date_added.should be >= latest.last.date_added
+    end
+
+    it "#oldest returns the N earliest entries, oldest first" do
+      oldest = catalog.oldest(2)
+      oldest.first.cve_id.should eq("CVE-2021-44228")
+      oldest.first.date_added.should be <= oldest.last.date_added
+    end
+
+    it "#latest / #oldest raise on negative N" do
+      expect_raises(ArgumentError) { catalog.latest(-1) }
+      expect_raises(ArgumentError) { catalog.oldest(-1) }
+    end
+  end
+
+  describe "CSV export" do
+    it "round-trips through parse_csv" do
+      original = SpecFixtures.sample_catalog
+      reparsed = KEV::Catalog.parse_csv(original.to_csv)
+      reparsed.size.should eq(original.size)
+      original.vulnerabilities.zip(reparsed.vulnerabilities).each do |a, b|
+        a.cve_id.should eq(b.cve_id)
+        a.cwes.should eq(b.cwes)
+        a.known_ransomware?.should eq(b.known_ransomware?)
+      end
+    end
+
+    it "writes the canonical header row in CISA order" do
+      catalog = SpecFixtures.sample_catalog
+      header = catalog.to_csv.lines.first
+      header.should eq("cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes")
+    end
+  end
+
   describe "#validate! / #valid?" do
     it "validates a well-formed catalog from the fixture" do
       c = SpecFixtures.sample_catalog

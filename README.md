@@ -15,9 +15,13 @@ parsing, querying, fetching, and JSON serialization for the official feed.
 - Lossless JSON round-trips against the canonical CISA feed —
   including unknown-but-valid `knownRansomwareCampaignUse` strings
   preserved on `known_ransomware_campaign_use_raw`
-- CSV mirror support via `Catalog.parse_csv` / `Client.fetch_csv`
+- CSV mirror support via `Catalog.parse_csv` / `Client.fetch_csv` and
+  CSV export via `Catalog#to_csv`
 - Explicit `validate!` / `valid?` for re-running schema checks on
   programmatically constructed records
+- Convenience surface: `Catalog#search`, `#diff`, `#stats`,
+  `#group_by_*`, `#latest` / `#oldest`, and per-entry deep links
+  (`#cisa_url` / `#nvd_url` / `#mitre_url`)
 
 ## Installation
 
@@ -60,6 +64,51 @@ csv_catalog = KEV::Client.fetch_csv
 
 # Follow redirects (off by default — set when pointing at a mirror):
 KEV::Client.new(url: "https://example.com/kev.json", max_redirects: 3).fetch
+```
+
+### Snapshot diff and summary
+
+```crystal
+old = KEV::Catalog.parse(File.read("kev-yesterday.json"))
+new = KEV.fetch
+
+delta = old.diff(new)
+delta.added.each   { |v| puts "added: #{v.summary}" }
+delta.removed.each { |v| puts "removed: #{v.cve_id}" }
+delta.changed.each { |before, after| puts "edited: #{after.cve_id}" }
+
+# One-call rollup — totals, ransomware, overdue, top vendors / CWEs / years.
+puts new.stats(top: 5)
+# => #<KEV::Stats total=1592 ransomware=321 overdue=1590 years=12 top_vendor=Microsoft(371)>
+```
+
+### Search and group
+
+```crystal
+catalog.search("log4j")          # substring across cve_id, name, description, vendor, product
+catalog.latest(10)               # newest first
+catalog.oldest(5)                # earliest first
+catalog.group_by_year[2024]      # all 2024-numbered CVEs
+catalog.group_by_vendor["Microsoft"]
+catalog.group_by_cwe["CWE-79"]
+catalog.group_by_ransomware[KEV::RansomwareUse::Known]
+```
+
+### Per-entry deep links
+
+```crystal
+v = catalog["CVE-2021-44228"]
+v.cisa_url   # CISA catalog page filtered to this CVE
+v.nvd_url    # NVD detail page
+v.mitre_url  # MITRE CVE record
+v.summary    # one-line digest with [ransomware]/[overdue] flags
+```
+
+### Export to CSV
+
+```crystal
+File.write("kev.csv", catalog.to_csv)
+KEV::Catalog.parse_csv(File.read("kev.csv"))  # round-trips
 ```
 
 ### Validate programmatic records

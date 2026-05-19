@@ -308,9 +308,115 @@ module KEV
       seen.to_a.sort!
     end
 
+    # Case-insensitive substring match across the user-facing text fields:
+    # `cve_id`, `vulnerability_name`, `short_description`, `vendor_project`,
+    # and `product`. Useful for a single "give me everything mentioning
+    # log4j" hit without writing a custom `where` block.
+    def search(query : String) : Array(Vulnerability)
+      q = query.downcase
+      vulnerabilities.select do |v|
+        v.cve_id.downcase.includes?(q) ||
+          v.vulnerability_name.downcase.includes?(q) ||
+          v.short_description.downcase.includes?(q) ||
+          v.vendor_project.downcase.includes?(q) ||
+          v.product.downcase.includes?(q)
+      end
+    end
+
+    # Group every entry by `cve_year`. Years map to `Array(Vulnerability)`
+    # in source-feed order (no sort on the inner arrays).
+    def group_by_year : Hash(Int32, Array(Vulnerability))
+      vulnerabilities.group_by(&.cve_year)
+    end
+
+    # Group every entry by vendor (verbatim string, not case-folded).
+    def group_by_vendor : Hash(String, Array(Vulnerability))
+      vulnerabilities.group_by(&.vendor_project)
+    end
+
+    # Group every entry by *each* of its CWE codes. A vulnerability with
+    # multiple CWEs appears under each one. Entries without CWEs do not
+    # contribute to the result.
+    def group_by_cwe : Hash(String, Array(Vulnerability))
+      acc = Hash(String, Array(Vulnerability)).new { |h, k| h[k] = [] of Vulnerability }
+      vulnerabilities.each do |v|
+        v.cwes.each { |c| acc[c] << v }
+      end
+      acc
+    end
+
+    # Group by the typed `RansomwareUse` value. Entries with no
+    # `knownRansomwareCampaignUse` (legacy rows) are grouped under `nil`.
+    def group_by_ransomware : Hash(RansomwareUse?, Array(Vulnerability))
+      vulnerabilities.group_by(&.known_ransomware_campaign_use)
+    end
+
+    # The N most recently added entries (newest first). Ties on
+    # `date_added` are broken by `cve_id` for stability.
+    def latest(n : Int32 = 10) : Array(Vulnerability)
+      raise ArgumentError.new("latest count must be >= 0") if n < 0
+      vulnerabilities
+        .sort_by { |v| {-v.date_added.to_unix, v.cve_id} }
+        .first(n)
+    end
+
+    # The N oldest entries (earliest first). Ties broken by `cve_id`.
+    def oldest(n : Int32 = 10) : Array(Vulnerability)
+      raise ArgumentError.new("oldest count must be >= 0") if n < 0
+      vulnerabilities.sort.first(n)
+    end
+
     # Start a chainable `Query` over this catalog's entries.
     def query : Query
       Query.new(vulnerabilities)
+    end
+
+    # Compare two snapshots by CVE id. Returns a `Diff` describing what
+    # was added, removed, or modified relative to `self`. The receiver is
+    # the "before" snapshot; `other` is the "after".
+    def diff(other : Catalog) : Diff
+      before = index_by_cve
+      after = other.index_by_cve
+
+      added = [] of Vulnerability
+      changed = [] of Tuple(Vulnerability, Vulnerability)
+      unchanged = [] of Vulnerability
+
+      after.each do |cve, after_v|
+        if before_v = before[cve]?
+          if after_v == before_v
+            unchanged << after_v
+          else
+            changed << {before_v, after_v}
+          end
+        else
+          added << after_v
+        end
+      end
+
+      removed = [] of Vulnerability
+      before.each do |cve, before_v|
+        removed << before_v unless after.has_key?(cve)
+      end
+
+      Diff.new(
+        added: added,
+        removed: removed,
+        changed: changed,
+        unchanged: unchanged,
+      )
+    end
+
+    # Compute a `Stats` summary in a single pass. See `KEV::Stats`.
+    def stats(top : Int32 = 5, now : Time = Time.utc) : Stats
+      Stats.compute(self, top: top, now: now)
+    end
+
+    # Lazy CVE-id index used by `diff` / lookup helpers. Same lazy memo
+    # as `cve_index`, exposed under a private name so the diff path can
+    # reuse it without leaking the underlying Hash.
+    protected def index_by_cve : Hash(String, Vulnerability)
+      cve_index
     end
 
     # Run `Vulnerability#validate!` on every entry. Use after constructing
@@ -327,6 +433,17 @@ module KEV
       true
     rescue ParseError
       false
+    end
+
+    # Emit the catalog in the canonical CSV form (matches CISA's CSV
+    # mirror byte-for-byte except where input was synthesized — the CSV
+    # has no metadata, so `catalog_version` / `date_released` are
+    # discarded). Round-trips through `Catalog.parse_csv`.
+    def to_csv : String
+      ::CSV.build do |csv|
+        csv.row(CSV_HEADERS)
+        vulnerabilities.each(&.to_csv_row(csv))
+      end
     end
 
     # JSON serialization in the exact shape of the CISA feed. Round-trips
