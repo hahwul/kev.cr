@@ -6,11 +6,14 @@ parsing, querying, fetching, and JSON serialization for the official feed.
 
 - Strict, schema-bound parser modeled on the [official KEV JSON
   schema](https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities_schema.json)
+  — validates `cveID`/CWE patterns at parse time
 - Type-safe `Vulnerability` and `Catalog` models
 - Chainable `Query` builder for vendor / product / CWE / ransomware /
   due-date filters
 - Built-in HTTP `Client` with `ETag` / `If-Modified-Since` support
-- Lossless JSON round-trips against the canonical CISA feed
+- Lossless JSON round-trips against the canonical CISA feed —
+  including unknown-but-valid `knownRansomwareCampaignUse` strings
+  preserved on `known_ransomware_campaign_use_raw`
 
 ## Installation
 
@@ -126,8 +129,9 @@ All exceptions inherit from `KEV::Error`:
 
 - `KEV::ParseError` — malformed JSON, missing fields, bad dates.
 - `KEV::MissingFieldError < ParseError` — a schema-required field is absent.
-- `KEV::InvalidValueError < ParseError` — a field value is outside its
-  permitted set (e.g. an unknown `knownRansomwareCampaignUse`).
+- `KEV::InvalidValueError < ParseError` — a field value violates a
+  schema-level pattern (e.g. a malformed `cveID` or a CWE that does not
+  match `^CWE-[0-9]+$`).
 - `KEV::FetchError` — transport-level failures in `KEV::Client`.
 
 `KEV.parse?` and `KEV::Catalog.parse?` return `nil` instead of raising.
