@@ -15,3 +15,8 @@ license: MIT
 repository: https://github.com/hahwul/kev.cr
 homepage: https://github.com/hahwul/kev.cr
 documentation: https://github.com/hahwul/kev.cr
+
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
+    branch: master

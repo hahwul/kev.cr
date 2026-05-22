@@ -19,7 +19,7 @@ describe KEV::Catalog do
           "count": 0,
           "vulnerabilities": []
         }
-      JSON
+        JSON
       c = KEV::Catalog.parse(json)
       c.title.should be_nil
       c.size.should eq(0)
@@ -34,7 +34,7 @@ describe KEV::Catalog do
           "count": 0,
           "vulnerabilities": []
         }
-      JSON
+        JSON
       c = KEV::Catalog.parse(json)
       c.date_released.year.should eq(2026)
     end
@@ -98,7 +98,7 @@ describe KEV::Catalog do
     end
 
     it "#ransomware filters by known ransomware use" do
-      ids = catalog.ransomware.map(&.cve_id).sort
+      ids = catalog.ransomware.map(&.cve_id).sort!
       ids.should eq(["CVE-2021-44228", "CVE-2023-23397"])
     end
 
@@ -168,7 +168,7 @@ describe KEV::Catalog do
             }
           ]
         }
-      JSON
+        JSON
 
       emitted = JSON.parse(KEV::Catalog.parse(json).to_json)
       entry = emitted["vulnerabilities"].as_a.first.as_h
@@ -184,7 +184,7 @@ describe KEV::Catalog do
           "count": 0,
           "vulnerabilities": []
         }
-      JSON
+        JSON
       KEV::Catalog.parse(json).should be_a(KEV::Catalog)
     end
   end
@@ -254,8 +254,8 @@ describe KEV::Catalog do
 
     it "#group_by_ransomware splits Known from Unknown" do
       grouped = catalog.group_by_ransomware
-      grouped[KEV::RansomwareUse::Known].map(&.cve_id).sort.should eq(["CVE-2021-44228", "CVE-2023-23397"])
-      grouped[KEV::RansomwareUse::Unknown].map(&.cve_id).sort.should eq(["CVE-2014-0160", "CVE-2024-21887"])
+      grouped[KEV::RansomwareUse::Known].map(&.cve_id).sort!.should eq(["CVE-2021-44228", "CVE-2023-23397"])
+      grouped[KEV::RansomwareUse::Unknown].map(&.cve_id).sort!.should eq(["CVE-2014-0160", "CVE-2024-21887"])
     end
 
     it "#latest returns the N newest entries, newest first" do

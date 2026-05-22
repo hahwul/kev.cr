@@ -29,7 +29,7 @@ describe KEV::Query do
   end
 
   it "supports a custom predicate via #where" do
-    result = catalog.query.where { |v| v.product.starts_with?("Connect") }.to_a
+    result = catalog.query.where(&.product.starts_with?("Connect")).to_a
     result.map(&.cve_id).should eq(["CVE-2024-21887"])
   end
 

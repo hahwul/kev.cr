@@ -10,10 +10,10 @@ module KEV
   #
   # ```
   # s = catalog.stats(top: 5)
-  # s.total              # => 1592
-  # s.ransomware         # => 321
-  # s.top_vendors        # => [{"Microsoft", 320}, {"Cisco", 78}, ...]
-  # s.by_year            # => {2024 => 187, 2025 => 142, ...}
+  # s.total       # => 1592
+  # s.ransomware  # => 321
+  # s.top_vendors # => [{"Microsoft", 320}, {"Cisco", 78}, ...]
+  # s.by_year     # => {2024 => 187, 2025 => 142, ...}
   # ```
   struct Stats
     # Total number of entries.

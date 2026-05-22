@@ -261,7 +261,7 @@ module KEV
 
     # All entries tagged with the given CWE (e.g. `"CWE-79"` or `"79"`).
     def by_cwe(code : String) : Array(Vulnerability)
-      vulnerabilities.select { |v| v.has_cwe?(code) }
+      vulnerabilities.select(&.has_cwe?(code))
     end
 
     # All entries flagged as known ransomware-campaign exploits.
@@ -506,7 +506,7 @@ module KEV
 
     private def self.optional_string(obj, key : String) : String?
       raw = obj[key]?
-      return nil if raw.nil? || raw.raw.nil?
+      return if raw.nil? || raw.raw.nil?
       raw.as_s? || raise ParseError.new("catalog field '#{key}' is not a string")
     end
 

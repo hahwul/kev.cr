@@ -24,7 +24,7 @@ describe KEV::Stats do
     s.top_vendors.size.should be <= 2
     # Every fixture vendor appears once, so any pair is valid; verify the
     # ordering invariant (counts descending).
-    s.top_vendors.map(&.[1]).should eq(s.top_vendors.map(&.[1]).sort.reverse)
+    s.top_vendors.map(&.[1]).should eq(s.top_vendors.map(&.[1]).sort!.reverse!)
     # CWEs across the fixture: CWE-20, CWE-917, CWE-294, CWE-77 — all 1 each.
     s.top_cwes.size.should be <= 2
   end

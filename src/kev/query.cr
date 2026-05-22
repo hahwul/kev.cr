@@ -54,18 +54,18 @@ module KEV
     # Substring match against `vulnerability_name` (case-insensitive).
     def name_matches(substr : String) : Query
       n = substr.downcase
-      chain { |v| v.vulnerability_name.downcase.includes?(n) }
+      chain(&.vulnerability_name.downcase.includes?(n))
     end
 
     # Substring match against `short_description` (case-insensitive).
     def description_matches(substr : String) : Query
       n = substr.downcase
-      chain { |v| v.short_description.downcase.includes?(n) }
+      chain(&.short_description.downcase.includes?(n))
     end
 
     # Filter by CWE code (`"CWE-79"` or `"79"`).
     def cwe(code : String) : Query
-      chain { |v| v.has_cwe?(code) }
+      chain(&.has_cwe?(code))
     end
 
     # Keep only entries with `knownRansomwareCampaignUse: "Known"`.
