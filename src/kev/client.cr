@@ -98,7 +98,7 @@ module KEV
       headers["If-Modified-Since"] = last_modified.as(String) if last_modified
 
       response = get(extra_headers: headers, accept_304: true)
-      return nil if response.status_code == 304
+      return if response.status_code == 304
       capture_validators(response)
       Catalog.parse(response.body)
     end
