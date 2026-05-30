@@ -1,5 +1,6 @@
 require "http/client"
 require "openssl"
+require "socket"
 require "uri"
 require "./error"
 require "./catalog"
@@ -40,9 +41,31 @@ module KEV
     DEFAULT_USER_AGENT = "kev.cr/#{VERSION} (+https://github.com/hahwul/kev.cr)"
 
     # Default ceiling for redirect chasing in `fetch`. Most KEV requests
-    # answer 200 directly; we cap follow-throughs at 3 so a misconfigured
-    # mirror cannot loop forever.
+    # answer 200 directly, so the default is `0`: no redirects are followed
+    # and a `3xx` response raises `FetchError`. Raise this (via the
+    # `max_redirects` argument) when pointing the client at a mirror or proxy
+    # that issues a canonical redirect.
     DEFAULT_MAX_REDIRECTS = 0
+
+    # Default number of *retries* (in addition to the initial attempt) for
+    # transient failures. A single CISA hiccup — a 503 behind their CDN, a
+    # reset connection, a read timeout — should not surface to the caller, so
+    # the request is retried with exponential backoff before giving up.
+    DEFAULT_MAX_RETRIES = 3
+
+    # Base delay for the first backoff sleep. Subsequent retries double this
+    # (capped at `MAX_BACKOFF`) and add jitter.
+    DEFAULT_RETRY_BACKOFF = 500.milliseconds
+
+    # Upper bound for a single exponential-backoff sleep. Without a cap the
+    # doubling delay grows unbounded and can strand a fiber for minutes; 30s
+    # is plenty to let a transient outage clear.
+    MAX_BACKOFF = 30.seconds
+
+    # HTTP status codes worth retrying: rate-limiting plus the transient
+    # gateway/server-side 5xx family. A 4xx (404, 403, …) is the caller's
+    # problem and is never retried.
+    RETRIABLE_STATUS = {429, 500, 502, 503, 504}
 
     getter url : String
     getter user_agent : String
@@ -54,6 +77,15 @@ module KEV
     # Set this when pointing the client at a mirror or proxy that issues a
     # canonical redirect.
     getter max_redirects : Int32
+
+    # Number of retries (beyond the first attempt) for transient failures.
+    # `0` restores the original single-attempt behavior.
+    getter max_retries : Int32
+
+    # Base backoff delay; doubled per retry, capped at `MAX_BACKOFF`, plus
+    # jitter. Injectable so tests can drive the retry path with a near-zero
+    # delay and stay fast.
+    getter retry_backoff : Time::Span
 
     # Last `ETag` observed on a successful fetch (or `nil` if the server
     # did not return one). Used by `fetch_if_modified`.
@@ -68,8 +100,11 @@ module KEV
       @connect_timeout : Time::Span = 10.seconds,
       @read_timeout : Time::Span = 30.seconds,
       @max_redirects : Int32 = DEFAULT_MAX_REDIRECTS,
+      @max_retries : Int32 = DEFAULT_MAX_RETRIES,
+      @retry_backoff : Time::Span = DEFAULT_RETRY_BACKOFF,
     )
       raise FetchError.new("max_redirects must be >= 0 (got #{@max_redirects})") if @max_redirects < 0
+      raise FetchError.new("max_retries must be >= 0 (got #{@max_retries})") if @max_retries < 0
     end
 
     # Fetch and parse the catalog. Raises `FetchError` on any transport
@@ -149,17 +184,7 @@ module KEV
         values.each { |v| headers.add(k, v) }
       end
 
-      client = HTTP::Client.new(uri)
-      client.connect_timeout = connect_timeout
-      client.read_timeout = read_timeout
-
-      begin
-        response = client.get(uri.request_target, headers: headers)
-      rescue ex : IO::Error | Socket::Error | OpenSSL::SSL::Error
-        raise FetchError.new("KEV feed request to #{target_url} failed: #{ex.message}")
-      ensure
-        client.close
-      end
+      response = request_with_retry(uri, target_url, headers)
 
       return response if accept_304 && response.status_code == 304
 
@@ -174,6 +199,103 @@ module KEV
         raise FetchError.new("KEV feed at #{target_url} returned HTTP #{response.status_code} #{response.status_message}")
       end
       response
+    end
+
+    # Issue a single GET, transparently retrying transient failures —
+    # connection resets, timeouts, and the retriable 5xx/429 status family —
+    # with capped exponential backoff and jitter. A `Retry-After` header on a
+    # 429/503 overrides the computed backoff. Non-retriable statuses (2xx,
+    # 3xx, and 4xx like 404) are returned to the caller untouched; redirect
+    # and 304 handling stays in `do_get`.
+    #
+    # Each attempt opens its own `HTTP::Client`. GET is idempotent, so
+    # replaying it is safe.
+    private def request_with_retry(
+      uri : URI,
+      target_url : String,
+      headers : HTTP::Headers,
+    ) : HTTP::Client::Response
+      attempt = 0
+
+      loop do
+        attempt += 1
+        begin
+          response = perform_request(uri, headers)
+
+          if RETRIABLE_STATUS.includes?(response.status_code) && attempt <= @max_retries
+            if hint = retry_after_delay(response.headers)
+              sleep hint
+            else
+              sleep_backoff(attempt)
+            end
+            next
+          end
+
+          return response
+        rescue ex : IO::Error | Socket::Error | OpenSSL::SSL::Error
+          # IO::TimeoutError descends from IO::Error, so timeouts land here.
+          if attempt > @max_retries
+            raise FetchError.new("KEV feed request to #{target_url} failed: #{ex.message}")
+          end
+          sleep_backoff(attempt)
+        end
+      end
+    end
+
+    private def perform_request(uri : URI, headers : HTTP::Headers) : HTTP::Client::Response
+      client = HTTP::Client.new(uri)
+      client.connect_timeout = connect_timeout
+      client.read_timeout = read_timeout
+      client.get(uri.request_target, headers: headers)
+    ensure
+      client.try &.close
+    end
+
+    # Parse a `Retry-After` header. Supports both the delay-seconds form
+    # (`Retry-After: 30`) and the HTTP-date form (`Retry-After: Wed, 21 Oct
+    # 2015 07:28:00 GMT`). Returns `nil` if absent, unparseable, or negative.
+    # Capped at one minute so a misbehaving server can't strand a fiber.
+    private def retry_after_delay(headers : HTTP::Headers) : Time::Span?
+      raw = headers["Retry-After"]?
+      return unless raw
+      raw = raw.strip
+      if seconds = raw.to_i?
+        return if seconds < 0
+        return seconds.clamp(0, 60).seconds
+      end
+      begin
+        target = HTTP.parse_time(raw)
+        return unless target
+        delta = target - Time.utc
+        return if delta.negative?
+        delta < 60.seconds ? delta : 60.seconds
+      rescue
+        nil
+      end
+    end
+
+    private def sleep_backoff(attempt : Int32) : Nil
+      sleep backoff_delay(attempt)
+    end
+
+    # Exponential backoff with a hard cap and decorrelated jitter:
+    #   base * 2^(attempt-1), clamped to `MAX_BACKOFF`, plus up to 10% jitter.
+    #
+    # The cap keeps a long retry chain from sleeping for minutes, and the
+    # jitter spreads concurrent retries so they don't all wake at once. This
+    # is library runtime code (not a deterministic workflow), so a random
+    # source is acceptable here.
+    #
+    # Public so the cap/jitter bounds can be unit-tested without sleeping.
+    def backoff_delay(attempt : Int32) : Time::Span
+      shift = attempt - 1
+      # Guard against `1 << n` overflow for large attempt counts before the
+      # cap is even applied.
+      factor = shift >= 30 ? (1_i64 << 30) : (1_i64 << shift)
+      base = @retry_backoff * factor
+      capped = base < MAX_BACKOFF ? base : MAX_BACKOFF
+      jitter = capped * (rand * 0.1)
+      capped + jitter
     end
 
     private def capture_validators(response : HTTP::Client::Response) : Nil
