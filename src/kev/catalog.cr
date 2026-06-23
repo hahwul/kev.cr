@@ -44,6 +44,7 @@ module KEV
     getter vulnerabilities : Array(Vulnerability)
 
     @by_cve : Hash(String, Vulnerability)?
+    @by_cve_size : Int32?
 
     def initialize(
       @catalog_version : String,
@@ -235,6 +236,7 @@ module KEV
     # array's length.
     def reindex! : Nil
       @by_cve = nil
+      @by_cve_size = nil
     end
 
     # `find` that raises `KeyError` on miss — mirrors `Hash#[]`.
@@ -249,14 +251,12 @@ module KEV
 
     # All entries for a given vendor (exact, case-insensitive match).
     def by_vendor(name : String) : Array(Vulnerability)
-      n = name.downcase
-      vulnerabilities.select { |v| v.vendor_project.downcase == n }
+      vulnerabilities.select { |v| v.vendor_project.compare(name, case_insensitive: true) == 0 }
     end
 
     # All entries for a given product (exact, case-insensitive match).
     def by_product(name : String) : Array(Vulnerability)
-      n = name.downcase
-      vulnerabilities.select { |v| v.product.downcase == n }
+      vulnerabilities.select { |v| v.product.compare(name, case_insensitive: true) == 0 }
     end
 
     # All entries tagged with the given CWE (e.g. `"CWE-79"` or `"79"`).
@@ -313,13 +313,13 @@ module KEV
     # and `product`. Useful for a single "give me everything mentioning
     # log4j" hit without writing a custom `where` block.
     def search(query : String) : Array(Vulnerability)
-      q = query.downcase
+      rx = Regex.new(Regex.escape(query), Regex::Options::IGNORE_CASE)
       vulnerabilities.select do |v|
-        v.cve_id.downcase.includes?(q) ||
-          v.vulnerability_name.downcase.includes?(q) ||
-          v.short_description.downcase.includes?(q) ||
-          v.vendor_project.downcase.includes?(q) ||
-          v.product.downcase.includes?(q)
+        v.cve_id.matches?(rx) ||
+          v.vulnerability_name.matches?(rx) ||
+          v.short_description.matches?(rx) ||
+          v.vendor_project.matches?(rx) ||
+          v.product.matches?(rx)
       end
     end
 
@@ -474,10 +474,8 @@ module KEV
 
     private def cve_index : Hash(String, Vulnerability)
       cached = @by_cve
-      # Cheap staleness check: if a caller added or removed entries since
-      # the memo was built, the cached hash and the live array no longer
-      # agree on size. Drop the memo and rebuild.
-      return cached if cached && cached.size == vulnerabilities.size
+      return cached if cached && @by_cve_size == vulnerabilities.size
+      @by_cve_size = vulnerabilities.size
       @by_cve = vulnerabilities.each_with_object({} of String => Vulnerability) do |v, h|
         h[v.cve_id] = v
       end
