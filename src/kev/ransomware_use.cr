@@ -6,18 +6,15 @@ module KEV
     Known
     Unknown
 
-    def self.parse(raw : String) : RansomwareUse
+    def self.parse?(raw : String) : RansomwareUse?
       case raw.strip
       when "Known"   then Known
       when "Unknown" then Unknown
-      else                raise InvalidValueError.new("knownRansomwareCampaignUse", raw)
       end
     end
 
-    def self.parse?(raw : String) : RansomwareUse?
-      parse(raw)
-    rescue InvalidValueError
-      nil
+    def self.parse(raw : String) : RansomwareUse
+      parse?(raw) || raise InvalidValueError.new("knownRansomwareCampaignUse", raw)
     end
 
     # Canonical CISA spelling (capitalised). Used for JSON serialization so

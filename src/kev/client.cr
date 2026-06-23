@@ -244,11 +244,13 @@ module KEV
 
     private def perform_request(uri : URI, headers : HTTP::Headers) : HTTP::Client::Response
       client = HTTP::Client.new(uri)
-      client.connect_timeout = connect_timeout
-      client.read_timeout = read_timeout
-      client.get(uri.request_target, headers: headers)
-    ensure
-      client.try &.close
+      begin
+        client.connect_timeout = connect_timeout
+        client.read_timeout = read_timeout
+        client.get(uri.request_target, headers: headers)
+      ensure
+        client.close
+      end
     end
 
     # Parse a `Retry-After` header. Supports both the delay-seconds form

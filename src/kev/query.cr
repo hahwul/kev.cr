@@ -41,26 +41,24 @@ module KEV
 
     # Filter by vendor (exact, case-insensitive).
     def vendor(name : String) : Query
-      n = name.downcase
-      chain { |v| v.vendor_project.downcase == n }
+      chain { |v| v.vendor_project.compare(name, case_insensitive: true) == 0 }
     end
 
     # Filter by product (exact, case-insensitive).
     def product(name : String) : Query
-      n = name.downcase
-      chain { |v| v.product.downcase == n }
+      chain { |v| v.product.compare(name, case_insensitive: true) == 0 }
     end
 
     # Substring match against `vulnerability_name` (case-insensitive).
     def name_matches(substr : String) : Query
-      n = substr.downcase
-      chain(&.vulnerability_name.downcase.includes?(n))
+      rx = Regex.new(Regex.escape(substr), Regex::Options::IGNORE_CASE)
+      chain(&.vulnerability_name.matches?(rx))
     end
 
     # Substring match against `short_description` (case-insensitive).
     def description_matches(substr : String) : Query
-      n = substr.downcase
-      chain(&.short_description.downcase.includes?(n))
+      rx = Regex.new(Regex.escape(substr), Regex::Options::IGNORE_CASE)
+      chain(&.short_description.matches?(rx))
     end
 
     # Filter by CWE code (`"CWE-79"` or `"79"`).
