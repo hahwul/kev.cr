@@ -8,7 +8,7 @@ weight = 1
 
 | Requirement | Version    |
 |-------------|------------|
-| Crystal     | >= 1.19.0  |
+| Crystal     | >= 1.21.0  |
 
 kev.cr is pure Crystal with no native dependencies — it runs anywhere Crystal does.
 
