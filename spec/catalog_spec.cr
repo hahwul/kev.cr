@@ -260,6 +260,28 @@ describe KEV::Catalog do
       grouped["CWE-294"].map(&.cve_id).should eq(["CVE-2023-23397"])
     end
 
+    it "#group_by_cwe does not grow when an absent code is looked up" do
+      # The accumulator used to be built with a default *block*, which
+      # `Hash#[]` runs on a miss — so merely reading an unknown CWE
+      # inserted an empty bucket into the caller's result.
+      grouped = catalog.group_by_cwe
+      before = grouped.size
+
+      grouped["CWE-99999"]?.should be_nil
+      expect_raises(KeyError) { grouped["CWE-99999"] }
+      grouped.fetch("CWE-99999", [] of KEV::Vulnerability).should be_empty
+
+      grouped.size.should eq(before)
+      grouped.keys.should_not contain("CWE-99999")
+    end
+
+    it "#group_by_cwe buckets are independent of each other" do
+      # The default block assigned the *same* freshly built array only on
+      # first touch; make sure each code owns a distinct array.
+      grouped = catalog.group_by_cwe
+      grouped["CWE-20"].should_not be(grouped["CWE-917"])
+    end
+
     it "#group_by_ransomware splits Known from Unknown" do
       grouped = catalog.group_by_ransomware
       grouped[KEV::RansomwareUse::Known].map(&.cve_id).sort!.should eq(["CVE-2021-44228", "CVE-2023-23397"])

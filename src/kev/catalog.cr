@@ -339,10 +339,14 @@ module KEV
     # Group every entry by *each* of its CWE codes. A vulnerability with
     # multiple CWEs appears under each one. Entries without CWEs do not
     # contribute to the result.
+    #
+    # The returned Hash carries no default block, so looking up a CWE that
+    # is not in the catalog raises `KeyError` (and `[]?` returns nil)
+    # rather than quietly inserting an empty bucket.
     def group_by_cwe : Hash(String, Array(Vulnerability))
-      acc = Hash(String, Array(Vulnerability)).new { |h, k| h[k] = [] of Vulnerability }
+      acc = Hash(String, Array(Vulnerability)).new
       vulnerabilities.each do |v|
-        v.cwes.each { |c| acc[c] << v }
+        v.cwes.each { |c| (acc[c] ||= [] of Vulnerability) << v }
       end
       acc
     end
