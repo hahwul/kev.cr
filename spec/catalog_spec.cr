@@ -136,8 +136,22 @@ describe KEV::Catalog do
       catalog.products.should contain("Outlook")
     end
 
-    it "#cwes lists distinct sorted CWE codes" do
-      catalog.cwes.should eq(["CWE-20", "CWE-294", "CWE-77", "CWE-917"])
+    it "#cwes lists distinct CWE codes ordered by weakness number" do
+      # Not `["CWE-20", "CWE-294", "CWE-77", "CWE-917"]` — that is what a
+      # plain string sort produces, and it puts CWE-294 ahead of CWE-77.
+      catalog.cwes.should eq(["CWE-20", "CWE-77", "CWE-294", "CWE-917"])
+    end
+
+    it "#cwes keeps numeric order across digit-count boundaries" do
+      codes = %w[CWE-1004 CWE-79 CWE-100 CWE-2 CWE-20 CWE-9]
+      c = KEV::Catalog.new("v", Time.utc, 1, [
+        KEV::Vulnerability.new(
+          cve_id: "CVE-2024-1234", vendor_project: "V", product: "P",
+          vulnerability_name: "N", date_added: Time.utc(2024, 1, 1),
+          short_description: "S", required_action: "R",
+          due_date: Time.utc(2024, 2, 1), cwes: codes),
+      ])
+      c.cwes.should eq(%w[CWE-2 CWE-9 CWE-20 CWE-79 CWE-100 CWE-1004])
     end
   end
 

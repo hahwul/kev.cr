@@ -59,7 +59,7 @@ For multi-step pipelines see [`Catalog#query`](/api-reference/query/).
 |--------|-------------|
 | `vendors : Array(String)` | Distinct vendor names, sorted. |
 | `products : Array(String)` | Distinct product names, sorted. |
-| `cwes : Array(String)` | Distinct CWE codes, sorted. |
+| `cwes : Array(String)` | Distinct CWE codes, ordered by weakness number (`CWE-20` before `CWE-100`). |
 
 ## Enumerable + Indexable
 

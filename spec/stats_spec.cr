@@ -29,6 +29,28 @@ describe KEV::Stats do
     s.top_cwes.size.should be <= 2
   end
 
+  it "breaks equal-count CWE ties by weakness number, not by text" do
+    # All four fixture CWEs occur once, so the tiebreak alone decides who
+    # makes the cut. Sorting the codes as strings put CWE-294 ahead of
+    # CWE-77 and pushed CWE-77 out of a top-2.
+    s = catalog.stats(top: 4)
+    s.top_cwes.map(&.[0]).should eq(["CWE-20", "CWE-77", "CWE-294", "CWE-917"])
+
+    catalog.stats(top: 2).top_cwes.map(&.[0]).should eq(["CWE-20", "CWE-77"])
+  end
+
+  it "still ranks CWEs by count before applying the tiebreak" do
+    common = KEV::Vulnerability.new(
+      cve_id: "CVE-2024-1234", vendor_project: "V", product: "P",
+      vulnerability_name: "N", date_added: Time.utc(2024, 1, 1),
+      short_description: "S", required_action: "R",
+      due_date: Time.utc(2024, 2, 1), cwes: ["CWE-9999"])
+    c = KEV::Catalog.new("v", Time.utc, 2, [common, common.dup])
+
+    s = c.stats(top: 1)
+    s.top_cwes.should eq([{"CWE-9999", 2}])
+  end
+
   it "raises on negative top" do
     expect_raises(ArgumentError) { catalog.stats(top: -1) }
   end

@@ -328,11 +328,14 @@ module KEV
       vulnerabilities.map(&.product).uniq!.sort!
     end
 
-    # All distinct CWE codes referenced in the catalog, sorted.
+    # All distinct CWE codes referenced in the catalog, sorted by weakness
+    # *number* — `CWE-20`, `CWE-79`, `CWE-100`. A plain string sort would
+    # put `CWE-100` ahead of `CWE-20`, which is not an order any reader of
+    # a CWE list expects.
     def cwes : Array(String)
       seen = Set(String).new
       vulnerabilities.each { |v| v.each_cwe { |c| seen << c } }
-      seen.to_a.sort!
+      seen.to_a.sort_by! { |c| Vulnerability.cwe_sort_key(c) }
     end
 
     # Case-insensitive substring match across the user-facing text fields:
