@@ -1,3 +1,4 @@
+require "./catalog"
 require "./vulnerability"
 
 module KEV

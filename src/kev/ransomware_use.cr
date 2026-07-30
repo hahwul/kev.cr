@@ -1,3 +1,5 @@
+require "./error"
+
 module KEV
   # CISA's `knownRansomwareCampaignUse` field. The KEV catalog uses exactly
   # two string values: `"Known"` (confirmed leveraged in a ransomware

@@ -1,7 +1,11 @@
 require "csv"
 require "json"
 require "./error"
+require "./ransomware_use"
 require "./vulnerability"
+require "./query"
+require "./diff"
+require "./stats"
 
 module KEV
   # The full CISA Known Exploited Vulnerabilities catalog.

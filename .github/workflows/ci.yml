@@ -26,6 +26,8 @@ jobs:
         run: crystal tool format --check
       - name: Run tests
         run: crystal spec
+      - name: Check each source file is independently requirable
+        run: ./scripts/check_self_contained.sh
       - name: Run examples (smoke check)
         # `examples/fetch.cr` hits the live CISA feed — skip it so CI is
         # not gated on network availability and the upstream isn't probed
