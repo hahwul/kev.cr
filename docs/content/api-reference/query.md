@@ -37,8 +37,8 @@ catalog.query
 | `added_on_or_before(date : Time) : Query` | `date_added <= date`. |
 | `due_on_or_after(date : Time) : Query` | `due_date >= date`. |
 | `due_on_or_before(date : Time) : Query` | `due_date <= date`. |
-| `overdue(now : Time = Time.utc) : Query` | `due_date < now`. |
-| `due_within(span : Time::Span, now : Time = Time.utc) : Query` | Deadline in `[now, now + span]`. |
+| `overdue(now : Time = Time.utc) : Query` | Due day fully elapsed (`now >= due_date + 1 day`). |
+| `due_within(span : Time::Span, now : Time = Time.utc) : Query` | Not yet overdue and `due_date <= now + span`. |
 | `where(&block : Vulnerability -> Bool) : Query` | Arbitrary predicate. |
 
 ## Sorting

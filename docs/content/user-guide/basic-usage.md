@@ -45,7 +45,7 @@ catalog.by_vendor("Microsoft")    # case-insensitive
 catalog.by_product("Log4j2")      # case-insensitive
 catalog.by_cwe("CWE-79")          # or "79" — numeric width is normalised
 catalog.ransomware                # entries with knownRansomwareCampaignUse == "Known"
-catalog.overdue                   # past their due_date (vs Time.utc now)
+catalog.overdue                   # due day fully elapsed (vs Time.utc now)
 catalog.due_within(30.days)
 catalog.added_on_or_after(Time.utc(2024, 1, 1))
 ```
@@ -68,7 +68,7 @@ All sorted, distinct.
 v = catalog["CVE-2021-44228"]
 v.known_ransomware?            # => true
 v.overdue?                     # => true (relative to now)
-v.days_until_due               # negative when overdue
+v.days_until_due               # 0 on the due day, negative once overdue
 v.remediation_window_days      # => 14 (dueDate - dateAdded)
 v.has_cwe?("CWE-917")          # accepts "CWE-917", "917", "cwe-079" — width-normalised
 v.cve_year                     # => 2021

@@ -134,7 +134,7 @@ catalog["CVE-2021-44228"]?              # => same as find
 catalog.by_vendor("Microsoft")          # case-insensitive
 catalog.by_cwe("CWE-79")                # or just "79"
 catalog.ransomware                      # Array(Vulnerability)
-catalog.overdue                         # past their due date
+catalog.overdue                         # due day fully elapsed
 catalog.due_within(30.days)
 ```
 
@@ -159,7 +159,7 @@ Other `Query` filters: `product`, `name_matches`, `description_matches`,
 v = catalog["CVE-2021-44228"]
 v.known_ransomware?            # => true
 v.overdue?                     # => true (relative to now)
-v.days_until_due               # => negative when overdue
+v.days_until_due               # => 0 on the due day, negative once overdue
 v.remediation_window_days      # => 14
 v.has_cwe?("CWE-917")          # => true
 v.cve_year                     # => 2021

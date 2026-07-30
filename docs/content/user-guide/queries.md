@@ -31,7 +31,7 @@ Every chain step returns a new `Query`, so the source catalog is never mutated.
 | `year(year)` | Match by CVE year (the YYYY portion of the id) |
 | `added_on_or_after(date)` / `added_on_or_before(date)` | Bracket by `date_added` |
 | `due_on_or_after(date)` / `due_on_or_before(date)` | Bracket by `due_date` |
-| `overdue(now = Time.utc)` | Past their deadline |
+| `overdue(now = Time.utc)` | Due day fully elapsed |
 | `due_within(span, now = Time.utc)` | Deadline in `[now, now + span]` |
 | `where { \|v\| ... }` | Generic escape hatch |
 

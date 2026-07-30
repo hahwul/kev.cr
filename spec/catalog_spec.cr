@@ -114,6 +114,14 @@ describe KEV::Catalog do
       # And none are upcoming.
       catalog.due_within(30.days, Time.utc(2030, 1, 1)).should be_empty
     end
+
+    it "#due_within keeps an entry whose deadline is today" do
+      # log4j is due 2021-12-24. Half-way through that day it is still
+      # upcoming, not overdue — `due_date >= now` used to drop it.
+      noon = Time.utc(2021, 12, 24, 12, 0, 0)
+      catalog.due_within(30.days, noon).map(&.cve_id).should contain("CVE-2021-44228")
+      catalog.overdue(noon).map(&.cve_id).should_not contain("CVE-2021-44228")
+    end
   end
 
   describe "summaries" do

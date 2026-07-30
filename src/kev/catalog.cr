@@ -286,9 +286,11 @@ module KEV
     end
 
     # Entries due within the given time span from `now` and not yet overdue.
+    # "Not yet overdue" uses `Vulnerability#overdue?`, so an entry whose
+    # deadline is *today* still counts as upcoming.
     def due_within(span : Time::Span, now : Time = Time.utc) : Array(Vulnerability)
       cutoff = now + span
-      vulnerabilities.select { |v| v.due_date >= now && v.due_date <= cutoff }
+      vulnerabilities.select { |v| !v.overdue?(now) && v.due_date <= cutoff }
     end
 
     # All distinct vendor names in the catalog, sorted.
