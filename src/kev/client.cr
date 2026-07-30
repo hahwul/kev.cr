@@ -139,13 +139,20 @@ module KEV
     # Returns the new catalog on a 200 response and `nil` on a 304.
     #
     # First call (no validators recorded yet) behaves like `fetch`.
+    #
+    # A 304 still refreshes `last_etag` / `last_modified` when the server
+    # sends updated ones, so a long-lived poller tracks validator rotation
+    # instead of pinning the first pair it ever saw.
     def fetch_if_modified : Catalog?
       headers = HTTP::Headers.new
       headers["If-None-Match"] = last_etag.as(String) if last_etag
       headers["If-Modified-Since"] = last_modified.as(String) if last_modified
 
       response = get(extra_headers: headers, accept_304: true)
-      return if response.status_code == 304
+      if response.status_code == 304
+        refresh_validators(response)
+        return
+      end
       capture_validators(response)
       Catalog.parse(response.body)
     end
@@ -319,9 +326,28 @@ module KEV
       capped + jitter
     end
 
+    # Record the validators for a 2xx response. A 200 is a *new*
+    # representation, so validators are replaced wholesale — carrying a
+    # stale `ETag` across a body change would make the next conditional
+    # GET answer 304 for content we do not actually hold.
     private def capture_validators(response : HTTP::Client::Response) : Nil
       @last_etag = response.headers["ETag"]?
       @last_modified = response.headers["Last-Modified"]?
+    end
+
+    # Refresh the validators from a 304. Unlike a 200 this describes the
+    # representation we already hold, so it *updates* rather than
+    # replaces: RFC 9110 §15.4.5 requires an `ETag` when one would have
+    # been sent on a 200, but a 304 need not repeat `Last-Modified`.
+    # Overwrite only what the response actually carries, so a rotated
+    # validator is picked up without a missing header wiping a good one.
+    private def refresh_validators(response : HTTP::Client::Response) : Nil
+      if etag = response.headers["ETag"]?
+        @last_etag = etag
+      end
+      if modified = response.headers["Last-Modified"]?
+        @last_modified = modified
+      end
     end
   end
 end

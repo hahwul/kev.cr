@@ -120,6 +120,86 @@ describe KEV::Client do
     end
   end
 
+  it "picks up a validator rotated on a 304" do
+    # RFC 9110 §15.4.5: a 304 carries an ETag when one would have been
+    # sent on a 200. Dropping it pinned the client to the first validator
+    # it ever saw, so once the origin rotated (CDN reissue, weak/strong
+    # switch) every later poll missed the cache and re-downloaded the
+    # whole feed with a 200.
+    seen = [] of String?
+    handler = ->(context : HTTP::Server::Context) do
+      seen << context.request.headers["If-None-Match"]?
+      case seen.size
+      when 1
+        context.response.headers["ETag"] = %("v1")
+        context.response.headers["Last-Modified"] = "Wed, 15 Jan 2024 16:55:06 GMT"
+        context.response.content_type = "application/json"
+        context.response.print SpecFixtures.sample_catalog_json
+      else
+        # Same bytes, new validator.
+        context.response.headers["ETag"] = %("v2")
+        context.response.status_code = 304
+      end
+      nil
+    end
+
+    with_scripted_server(handler) do |base|
+      client = KEV::Client.new("#{base}/feed.json")
+      client.fetch
+      client.last_etag.should eq(%("v1"))
+
+      client.fetch_if_modified.should be_nil
+      client.last_etag.should eq(%("v2"))
+
+      client.fetch_if_modified.should be_nil
+      seen.should eq([nil, %("v1"), %("v2")])
+    end
+  end
+
+  it "does not wipe a stored validator the 304 omits" do
+    # A 304 need not repeat Last-Modified. Replacing validators wholesale
+    # would clear it and drop `If-Modified-Since` from later requests.
+    handler = ->(context : HTTP::Server::Context) do
+      if context.request.headers["If-None-Match"]?
+        context.response.headers["ETag"] = %("v1")
+        context.response.status_code = 304
+      else
+        context.response.headers["ETag"] = %("v1")
+        context.response.headers["Last-Modified"] = "Wed, 15 Jan 2024 16:55:06 GMT"
+        context.response.content_type = "application/json"
+        context.response.print SpecFixtures.sample_catalog_json
+      end
+      nil
+    end
+
+    with_scripted_server(handler) do |base|
+      client = KEV::Client.new("#{base}/feed.json")
+      client.fetch
+      client.fetch_if_modified.should be_nil
+
+      client.last_etag.should eq(%("v1"))
+      client.last_modified.should eq("Wed, 15 Jan 2024 16:55:06 GMT")
+    end
+  end
+
+  it "replaces validators wholesale on a 200" do
+    # The opposite case: a 200 is a new representation, so a validator
+    # the response omits must not be carried over from the old one.
+    handler = ->(context : HTTP::Server::Context) do
+      context.response.headers["ETag"] = %("v2")
+      context.response.content_type = "application/json"
+      context.response.print SpecFixtures.sample_catalog_json
+      nil
+    end
+
+    with_scripted_server(handler) do |base|
+      client = KEV::Client.new("#{base}/feed.json")
+      client.fetch
+      client.last_etag.should eq(%("v2"))
+      client.last_modified.should be_nil
+    end
+  end
+
   it "raises FetchError on a non-2xx response" do
     with_stub_server do |_, base, _|
       expect_raises(KEV::FetchError, /500/) do

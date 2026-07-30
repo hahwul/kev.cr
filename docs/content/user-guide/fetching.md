@@ -33,6 +33,8 @@ later  = client.fetch_if_modified  # => nil if the feed has not changed
 
 `fetch_if_modified` sends `If-None-Match` (from the last `ETag`) and `If-Modified-Since` (from the last `Last-Modified` header) and returns `nil` on a `304 Not Modified` response. The first call (no validators yet) behaves like a regular `fetch`.
 
+A `304` still updates the stored validators with whatever it carries, so a long-lived poller follows the origin when it rotates an `ETag` instead of pinning the first pair it saw. Because a `304` need not repeat `Last-Modified`, a header the response omits leaves the stored value alone — unlike a `200`, which is a new representation and replaces both.
+
 ```crystal
 client.last_etag         # => "\"kev-v1\"" (or nil before first fetch)
 client.last_modified     # => "Wed, 15 May 2026 16:55:06 GMT" (or nil)

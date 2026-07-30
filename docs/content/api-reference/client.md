@@ -40,8 +40,8 @@ After each successful fetch the client captures the upstream cache validators:
 
 | Getter | Description |
 |--------|-------------|
-| `last_etag : String?` | Captured from the response `ETag` header. |
-| `last_modified : String?` | Captured from the response `Last-Modified` header. |
+| `last_etag : String?` | Captured from the response `ETag` header; also refreshed from a `304`. |
+| `last_modified : String?` | Captured from the response `Last-Modified` header; also refreshed from a `304`. |
 
 These are used automatically by `fetch_if_modified` and can be persisted manually for cross-process caching.
 
