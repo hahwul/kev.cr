@@ -387,6 +387,33 @@ describe KEV::Catalog do
       expect_raises(KEV::InvalidValueError, /cwes/) { KEV::Catalog.parse_csv(bad_cwe) }
     end
 
+    it "tolerates a UTF-8 BOM ahead of the header row" do
+      # Excel — and anything round-tripped through it — prefixes CSV
+      # exports with a BOM. It used to fuse onto the first header name, so
+      # the column check reported `cveID` missing on a valid feed.
+      body = <<-CSV
+        cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes
+        CVE-2021-44228,Apache,Log4j2,Apache Log4j2 RCE,2021-12-10,JNDI vuln,Apply updates,2021-12-24,Known,,CWE-917
+        CSV
+
+      catalog = KEV::Catalog.parse_csv("﻿" + body)
+      catalog.size.should eq(1)
+      catalog["CVE-2021-44228"].vendor_project.should eq("Apache")
+
+      # Same via the IO overload, which strips the BOM by peeking.
+      from_io = KEV::Catalog.parse_csv(IO::Memory.new("﻿" + body))
+      from_io["CVE-2021-44228"].vendor_project.should eq("Apache")
+    end
+
+    it "leaves a BOM-free stream untouched" do
+      body = <<-CSV
+        cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes
+        CVE-2021-44228,Apache,Log4j2,Apache Log4j2 RCE,2021-12-10,JNDI vuln,Apply updates,2021-12-24,Known,,CWE-917
+        CSV
+      KEV::Catalog.parse_csv(IO::Memory.new(body)).size.should eq(1)
+      KEV::Catalog.parse_csv(body).size.should eq(1)
+    end
+
     it ".parse_csv? returns nil on malformed input" do
       KEV::Catalog.parse_csv?("not csv at all\n,,,").should be_nil
     end

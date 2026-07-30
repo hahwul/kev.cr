@@ -107,7 +107,7 @@ module KEV
       date_released : Time = Time.utc,
       title : String? = nil,
     ) : Catalog
-      csv = ::CSV.new(input, headers: true, strip: false)
+      csv = ::CSV.new(strip_bom(input), headers: true, strip: false)
       missing = CSV_HEADERS - csv.headers
       unless missing.empty?
         raise ParseError.new("CSV is missing required column(s): #{missing.join(", ")}")
@@ -157,6 +157,27 @@ module KEV
       parse_csv(input, **kwargs)
     rescue Error | ::CSV::MalformedCSVError
       nil
+    end
+
+    # UTF-8 byte-order mark. Excel — and anything that has round-tripped
+    # through it — writes one at the head of a CSV export, and CISA's own
+    # CSV mirror has shipped with it. Left in place it fuses onto the first
+    # header name (`"﻿cveID"`), so the column check below reports
+    # `cveID` missing on a perfectly well-formed feed.
+    private UTF8_BOM = Bytes[0xEF, 0xBB, 0xBF]
+
+    private def self.strip_bom(input : String) : String
+      input.lchop?('﻿') || input
+    end
+
+    private def self.strip_bom(input : IO) : IO
+      # `peek` is nil on IOs that cannot look ahead; those simply keep the
+      # pre-existing behaviour rather than consuming bytes speculatively.
+      peeked = input.peek
+      if peeked && peeked.size >= UTF8_BOM.size && peeked[0, UTF8_BOM.size] == UTF8_BOM
+        input.skip(UTF8_BOM.size)
+      end
+      input
     end
 
     private def self.blank_to_nil(value : String) : String?
