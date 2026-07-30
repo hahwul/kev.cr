@@ -306,7 +306,7 @@ module KEV
     # All distinct CWE codes referenced in the catalog, sorted.
     def cwes : Array(String)
       seen = Set(String).new
-      vulnerabilities.each { |v| v.cwes.each { |c| seen << c } }
+      vulnerabilities.each { |v| v.each_cwe { |c| seen << c } }
       seen.to_a.sort!
     end
 
@@ -346,7 +346,7 @@ module KEV
     def group_by_cwe : Hash(String, Array(Vulnerability))
       acc = Hash(String, Array(Vulnerability)).new
       vulnerabilities.each do |v|
-        v.cwes.each { |c| (acc[c] ||= [] of Vulnerability) << v }
+        v.each_cwe { |c| (acc[c] ||= [] of Vulnerability) << v }
       end
       acc
     end

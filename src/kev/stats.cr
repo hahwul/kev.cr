@@ -74,7 +74,7 @@ module KEV
         by_year[v.cve_year] += 1
         vendor_counts[v.vendor_project] += 1
         product_counts[v.product] += 1
-        v.cwes.each { |c| cwe_counts[c] += 1 }
+        v.each_cwe { |c| cwe_counts[c] += 1 }
       end
 
       new(
