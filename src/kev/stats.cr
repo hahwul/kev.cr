@@ -1,3 +1,4 @@
+require "./catalog"
 require "./vulnerability"
 
 module KEV
@@ -74,7 +75,7 @@ module KEV
         by_year[v.cve_year] += 1
         vendor_counts[v.vendor_project] += 1
         product_counts[v.product] += 1
-        v.cwes.each { |c| cwe_counts[c] += 1 }
+        v.each_cwe { |c| cwe_counts[c] += 1 }
       end
 
       new(
@@ -84,7 +85,7 @@ module KEV
         by_year: by_year,
         top_vendors: top_n(vendor_counts, top),
         top_products: top_n(product_counts, top),
-        top_cwes: top_n(cwe_counts, top),
+        top_cwes: top_cwes_n(cwe_counts, top),
         as_of: now,
       )
     end
@@ -93,6 +94,14 @@ module KEV
     # ties are stable, then take the first `n`.
     private def self.top_n(counts : Hash(String, Int32), n : Int32) : Array(Tuple(String, Int32))
       counts.to_a.sort_by! { |k, c| {-c, k} }.first(n)
+    end
+
+    # `top_n` for CWE buckets. Ties break on the weakness *number*, not on
+    # the code as text — otherwise equally-common `CWE-100` outranks
+    # `CWE-20`, and which codes make the cut at the `top` boundary depends
+    # on string ordering nobody asked for.
+    private def self.top_cwes_n(counts : Hash(String, Int32), n : Int32) : Array(Tuple(String, Int32))
+      counts.to_a.sort_by! { |k, c| {-c, Vulnerability.cwe_sort_key(k)} }.first(n)
     end
 
     def inspect(io : IO) : Nil

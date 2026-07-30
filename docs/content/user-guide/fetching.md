@@ -33,6 +33,8 @@ later  = client.fetch_if_modified  # => nil if the feed has not changed
 
 `fetch_if_modified` sends `If-None-Match` (from the last `ETag`) and `If-Modified-Since` (from the last `Last-Modified` header) and returns `nil` on a `304 Not Modified` response. The first call (no validators yet) behaves like a regular `fetch`.
 
+A `304` still updates the stored validators with whatever it carries, so a long-lived poller follows the origin when it rotates an `ETag` instead of pinning the first pair it saw. Because a `304` need not repeat `Last-Modified`, a header the response omits leaves the stored value alone — unlike a `200`, which is a new representation and replaces both.
+
 ```crystal
 client.last_etag         # => "\"kev-v1\"" (or nil before first fetch)
 client.last_modified     # => "Wed, 15 May 2026 16:55:06 GMT" (or nil)
@@ -71,7 +73,7 @@ end
 
 ## Redirects are not followed
 
-`KEV::Client` deliberately does **not** follow `3xx` redirects. CISA's feed URL has been stable, and a silent follow could route the client to an attacker-controlled host if the upstream is ever compromised. A `301` / `302` surfaces as a `FetchError` so you notice and update your configuration.
+`KEV::Client` deliberately does **not** follow redirects by default. CISA's feed URL has been stable, and a silent follow could route the client to an attacker-controlled host if the upstream is ever compromised. A `301` / `302` / `303` / `307` / `308` surfaces as a `FetchError` so you notice and update your configuration; pass `max_redirects:` to opt in. `304 Not Modified` is never treated as a redirect — it carries no `Location`.
 
 If you need to point the client at a known mirror or proxy, pass that URL to `KEV::Client.new(url: ...)` directly.
 

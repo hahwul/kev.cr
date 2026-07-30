@@ -1,7 +1,11 @@
 require "csv"
 require "json"
 require "./error"
+require "./ransomware_use"
 require "./vulnerability"
+require "./query"
+require "./diff"
+require "./stats"
 
 module KEV
   # The full CISA Known Exploited Vulnerabilities catalog.
@@ -107,7 +111,7 @@ module KEV
       date_released : Time = Time.utc,
       title : String? = nil,
     ) : Catalog
-      csv = ::CSV.new(input, headers: true, strip: false)
+      csv = ::CSV.new(strip_bom(input), headers: true, strip: false)
       missing = CSV_HEADERS - csv.headers
       unless missing.empty?
         raise ParseError.new("CSV is missing required column(s): #{missing.join(", ")}")
@@ -157,6 +161,27 @@ module KEV
       parse_csv(input, **kwargs)
     rescue Error | ::CSV::MalformedCSVError
       nil
+    end
+
+    # UTF-8 byte-order mark. Excel — and anything that has round-tripped
+    # through it — writes one at the head of a CSV export, and CISA's own
+    # CSV mirror has shipped with it. Left in place it fuses onto the first
+    # header name (`"﻿cveID"`), so the column check below reports
+    # `cveID` missing on a perfectly well-formed feed.
+    private UTF8_BOM = Bytes[0xEF, 0xBB, 0xBF]
+
+    private def self.strip_bom(input : String) : String
+      input.lchop?('﻿') || input
+    end
+
+    private def self.strip_bom(input : IO) : IO
+      # `peek` is nil on IOs that cannot look ahead; those simply keep the
+      # pre-existing behaviour rather than consuming bytes speculatively.
+      peeked = input.peek
+      if peeked && peeked.size >= UTF8_BOM.size && peeked[0, UTF8_BOM.size] == UTF8_BOM
+        input.skip(UTF8_BOM.size)
+      end
+      input
     end
 
     private def self.blank_to_nil(value : String) : String?
@@ -286,9 +311,11 @@ module KEV
     end
 
     # Entries due within the given time span from `now` and not yet overdue.
+    # "Not yet overdue" uses `Vulnerability#overdue?`, so an entry whose
+    # deadline is *today* still counts as upcoming.
     def due_within(span : Time::Span, now : Time = Time.utc) : Array(Vulnerability)
       cutoff = now + span
-      vulnerabilities.select { |v| v.due_date >= now && v.due_date <= cutoff }
+      vulnerabilities.select { |v| !v.overdue?(now) && v.due_date <= cutoff }
     end
 
     # All distinct vendor names in the catalog, sorted.
@@ -301,11 +328,14 @@ module KEV
       vulnerabilities.map(&.product).uniq!.sort!
     end
 
-    # All distinct CWE codes referenced in the catalog, sorted.
+    # All distinct CWE codes referenced in the catalog, sorted by weakness
+    # *number* — `CWE-20`, `CWE-79`, `CWE-100`. A plain string sort would
+    # put `CWE-100` ahead of `CWE-20`, which is not an order any reader of
+    # a CWE list expects.
     def cwes : Array(String)
       seen = Set(String).new
-      vulnerabilities.each { |v| v.cwes.each { |c| seen << c } }
-      seen.to_a.sort!
+      vulnerabilities.each { |v| v.each_cwe { |c| seen << c } }
+      seen.to_a.sort_by! { |c| Vulnerability.cwe_sort_key(c) }
     end
 
     # Case-insensitive substring match across the user-facing text fields:
@@ -337,10 +367,14 @@ module KEV
     # Group every entry by *each* of its CWE codes. A vulnerability with
     # multiple CWEs appears under each one. Entries without CWEs do not
     # contribute to the result.
+    #
+    # The returned Hash carries no default block, so looking up a CWE that
+    # is not in the catalog raises `KeyError` (and `[]?` returns nil)
+    # rather than quietly inserting an empty bucket.
     def group_by_cwe : Hash(String, Array(Vulnerability))
-      acc = Hash(String, Array(Vulnerability)).new { |h, k| h[k] = [] of Vulnerability }
+      acc = Hash(String, Array(Vulnerability)).new
       vulnerabilities.each do |v|
-        v.cwes.each { |c| acc[c] << v }
+        v.each_cwe { |c| (acc[c] ||= [] of Vulnerability) << v }
       end
       acc
     end

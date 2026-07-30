@@ -48,8 +48,8 @@ Each returns a fresh `Array(Vulnerability)`:
 | `ransomware` | `knownRansomwareCampaignUse == "Known"`. |
 | `added_on_or_after(date : Time)` | `date_added >= date`. |
 | `added_on_or_before(date : Time)` | `date_added <= date`. |
-| `overdue(now : Time = Time.utc)` | `due_date < now`. |
-| `due_within(span : Time::Span, now : Time = Time.utc)` | Deadline in `[now, now + span]`. |
+| `overdue(now : Time = Time.utc)` | Due day fully elapsed (`now >= due_date + 1 day`). |
+| `due_within(span : Time::Span, now : Time = Time.utc)` | Not yet overdue and `due_date <= now + span`. |
 
 For multi-step pipelines see [`Catalog#query`](/api-reference/query/).
 
@@ -59,7 +59,7 @@ For multi-step pipelines see [`Catalog#query`](/api-reference/query/).
 |--------|-------------|
 | `vendors : Array(String)` | Distinct vendor names, sorted. |
 | `products : Array(String)` | Distinct product names, sorted. |
-| `cwes : Array(String)` | Distinct CWE codes, sorted. |
+| `cwes : Array(String)` | Distinct CWE codes, ordered by weakness number (`CWE-20` before `CWE-100`). |
 
 ## Enumerable + Indexable
 

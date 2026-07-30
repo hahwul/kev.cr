@@ -114,6 +114,14 @@ describe KEV::Catalog do
       # And none are upcoming.
       catalog.due_within(30.days, Time.utc(2030, 1, 1)).should be_empty
     end
+
+    it "#due_within keeps an entry whose deadline is today" do
+      # log4j is due 2021-12-24. Half-way through that day it is still
+      # upcoming, not overdue — `due_date >= now` used to drop it.
+      noon = Time.utc(2021, 12, 24, 12, 0, 0)
+      catalog.due_within(30.days, noon).map(&.cve_id).should contain("CVE-2021-44228")
+      catalog.overdue(noon).map(&.cve_id).should_not contain("CVE-2021-44228")
+    end
   end
 
   describe "summaries" do
@@ -128,8 +136,22 @@ describe KEV::Catalog do
       catalog.products.should contain("Outlook")
     end
 
-    it "#cwes lists distinct sorted CWE codes" do
-      catalog.cwes.should eq(["CWE-20", "CWE-294", "CWE-77", "CWE-917"])
+    it "#cwes lists distinct CWE codes ordered by weakness number" do
+      # Not `["CWE-20", "CWE-294", "CWE-77", "CWE-917"]` — that is what a
+      # plain string sort produces, and it puts CWE-294 ahead of CWE-77.
+      catalog.cwes.should eq(["CWE-20", "CWE-77", "CWE-294", "CWE-917"])
+    end
+
+    it "#cwes keeps numeric order across digit-count boundaries" do
+      codes = %w[CWE-1004 CWE-79 CWE-100 CWE-2 CWE-20 CWE-9]
+      c = KEV::Catalog.new("v", Time.utc, 1, [
+        KEV::Vulnerability.new(
+          cve_id: "CVE-2024-1234", vendor_project: "V", product: "P",
+          vulnerability_name: "N", date_added: Time.utc(2024, 1, 1),
+          short_description: "S", required_action: "R",
+          due_date: Time.utc(2024, 2, 1), cwes: codes),
+      ])
+      c.cwes.should eq(%w[CWE-2 CWE-9 CWE-20 CWE-79 CWE-100 CWE-1004])
     end
   end
 
@@ -252,6 +274,28 @@ describe KEV::Catalog do
       grouped["CWE-294"].map(&.cve_id).should eq(["CVE-2023-23397"])
     end
 
+    it "#group_by_cwe does not grow when an absent code is looked up" do
+      # The accumulator used to be built with a default *block*, which
+      # `Hash#[]` runs on a miss — so merely reading an unknown CWE
+      # inserted an empty bucket into the caller's result.
+      grouped = catalog.group_by_cwe
+      before = grouped.size
+
+      grouped["CWE-99999"]?.should be_nil
+      expect_raises(KeyError) { grouped["CWE-99999"] }
+      grouped.fetch("CWE-99999", [] of KEV::Vulnerability).should be_empty
+
+      grouped.size.should eq(before)
+      grouped.keys.should_not contain("CWE-99999")
+    end
+
+    it "#group_by_cwe buckets are independent of each other" do
+      # The default block assigned the *same* freshly built array only on
+      # first touch; make sure each code owns a distinct array.
+      grouped = catalog.group_by_cwe
+      grouped["CWE-20"].should_not be(grouped["CWE-917"])
+    end
+
     it "#group_by_ransomware splits Known from Unknown" do
       grouped = catalog.group_by_ransomware
       grouped[KEV::RansomwareUse::Known].map(&.cve_id).sort!.should eq(["CVE-2021-44228", "CVE-2023-23397"])
@@ -355,6 +399,33 @@ describe KEV::Catalog do
         CVE-2024-0001,x,x,x,2024-01-01,x,x,2024-01-15,,,"CWE-79, oops"
         CSV
       expect_raises(KEV::InvalidValueError, /cwes/) { KEV::Catalog.parse_csv(bad_cwe) }
+    end
+
+    it "tolerates a UTF-8 BOM ahead of the header row" do
+      # Excel — and anything round-tripped through it — prefixes CSV
+      # exports with a BOM. It used to fuse onto the first header name, so
+      # the column check reported `cveID` missing on a valid feed.
+      body = <<-CSV
+        cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes
+        CVE-2021-44228,Apache,Log4j2,Apache Log4j2 RCE,2021-12-10,JNDI vuln,Apply updates,2021-12-24,Known,,CWE-917
+        CSV
+
+      catalog = KEV::Catalog.parse_csv("﻿" + body)
+      catalog.size.should eq(1)
+      catalog["CVE-2021-44228"].vendor_project.should eq("Apache")
+
+      # Same via the IO overload, which strips the BOM by peeking.
+      from_io = KEV::Catalog.parse_csv(IO::Memory.new("﻿" + body))
+      from_io["CVE-2021-44228"].vendor_project.should eq("Apache")
+    end
+
+    it "leaves a BOM-free stream untouched" do
+      body = <<-CSV
+        cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes
+        CVE-2021-44228,Apache,Log4j2,Apache Log4j2 RCE,2021-12-10,JNDI vuln,Apply updates,2021-12-24,Known,,CWE-917
+        CSV
+      KEV::Catalog.parse_csv(IO::Memory.new(body)).size.should eq(1)
+      KEV::Catalog.parse_csv(body).size.should eq(1)
     end
 
     it ".parse_csv? returns nil on malformed input" do

@@ -40,8 +40,8 @@ After each successful fetch the client captures the upstream cache validators:
 
 | Getter | Description |
 |--------|-------------|
-| `last_etag : String?` | Captured from the response `ETag` header. |
-| `last_modified : String?` | Captured from the response `Last-Modified` header. |
+| `last_etag : String?` | Captured from the response `ETag` header; also refreshed from a `304`. |
+| `last_modified : String?` | Captured from the response `Last-Modified` header; also refreshed from a `304`. |
 
 These are used automatically by `fetch_if_modified` and can be persisted manually for cross-process caching.
 
@@ -56,7 +56,9 @@ These are used automatically by `fetch_if_modified` and can be persisted manuall
 
 ## Redirects
 
-`KEV::Client` does **not** follow HTTP redirects. A `3xx` response surfaces as a `FetchError` so the caller can update the configured URL deliberately, rather than silently route to a different host.
+`KEV::Client` does **not** follow HTTP redirects by default (`max_redirects` is `0`). A `301` / `302` / `303` / `307` / `308` surfaces as a `FetchError` so the caller can update the configured URL deliberately, rather than silently route to a different host. Raise `max_redirects` when pointing at a mirror or proxy that issues a canonical redirect; once the budget is spent the error says so explicitly.
+
+Only those five statuses are treated as redirects. `304 Not Modified` is a 3xx but carries no `Location`, so it is reported as itself rather than chased.
 
 ## Non-http(s) URLs
 

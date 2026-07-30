@@ -101,10 +101,12 @@ module KEV
       chain(&.overdue?(now))
     end
 
-    # Keep entries due within `span` from `now` and not yet overdue.
+    # Keep entries due within `span` from `now` and not yet overdue. An
+    # entry whose deadline is *today* still counts as upcoming — see
+    # `Vulnerability#overdue?`.
     def due_within(span : Time::Span, now : Time = Time.utc) : Query
       cutoff = now + span
-      chain { |v| v.due_date >= now && v.due_date <= cutoff }
+      chain { |v| !v.overdue?(now) && v.due_date <= cutoff }
     end
 
     # Filter by CVE year (the YYYY portion of the CVE id).

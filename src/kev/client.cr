@@ -67,6 +67,16 @@ module KEV
     # problem and is never retried.
     RETRIABLE_STATUS = {429, 500, 502, 503, 504}
 
+    # Status codes that carry a `Location` the client is expected to
+    # follow — the same set `HTTP::Client` itself chases.
+    #
+    # Deliberately *not* the whole 3xx range: `HTTP::Status#redirection?`
+    # answers `true` for 304 Not Modified (and for 305/306), none of which
+    # carry a `Location`. Testing that predicate made a plain `fetch`
+    # against a caching intermediary report "redirect … missing Location
+    # header" instead of the actual status.
+    FOLLOWABLE_REDIRECTS = {301, 302, 303, 307, 308}
+
     getter url : String
     getter user_agent : String
     getter connect_timeout : Time::Span
@@ -113,10 +123,12 @@ module KEV
     # `JSON::ParseException` propagates unchanged for raw JSON syntax
     # errors, matching the cvss.cr precedent.
     #
-    # NOTE: redirects are *not* followed. CISA's canonical feed URL has
-    # been stable, but if you point the client at a URL that responds
-    # with `3xx` you will get a `FetchError`, not the redirected body.
-    # Resolve the final URL yourself and pass it to `initialize`.
+    # NOTE: redirects are not followed by default (`max_redirects` is
+    # `0`). CISA's canonical feed URL has been stable, so a `3xx` raises
+    # `FetchError` rather than silently following to a possibly untrusted
+    # host — resolve the final URL yourself and pass it to `initialize`,
+    # or raise `max_redirects` if you are pointing at a mirror or proxy
+    # that issues a canonical redirect.
     def fetch : Catalog
       response = get(extra_headers: HTTP::Headers.new)
       capture_validators(response)
@@ -127,13 +139,20 @@ module KEV
     # Returns the new catalog on a 200 response and `nil` on a 304.
     #
     # First call (no validators recorded yet) behaves like `fetch`.
+    #
+    # A 304 still refreshes `last_etag` / `last_modified` when the server
+    # sends updated ones, so a long-lived poller tracks validator rotation
+    # instead of pinning the first pair it ever saw.
     def fetch_if_modified : Catalog?
       headers = HTTP::Headers.new
       headers["If-None-Match"] = last_etag.as(String) if last_etag
       headers["If-Modified-Since"] = last_modified.as(String) if last_modified
 
       response = get(extra_headers: headers, accept_304: true)
-      return if response.status_code == 304
+      if response.status_code == 304
+        refresh_validators(response)
+        return
+      end
       capture_validators(response)
       Catalog.parse(response.body)
     end
@@ -188,7 +207,14 @@ module KEV
 
       return response if accept_304 && response.status_code == 304
 
-      if response.status.redirection? && redirects_left > 0
+      if FOLLOWABLE_REDIRECTS.includes?(response.status_code)
+        if redirects_left <= 0
+          raise FetchError.new(
+            "KEV feed at #{target_url} returned HTTP #{response.status_code} #{response.status_message} " \
+            "but the redirect budget is exhausted (max_redirects=#{max_redirects}). " \
+            "Resolve the final URL yourself, or construct the client with a higher max_redirects."
+          )
+        end
         location = response.headers["Location"]?
         raise FetchError.new("KEV feed redirect from #{target_url} missing Location header") unless location
         next_url = URI.parse(location).absolute? ? location : URI.parse(target_url).resolve(location).to_s
@@ -300,9 +326,28 @@ module KEV
       capped + jitter
     end
 
+    # Record the validators for a 2xx response. A 200 is a *new*
+    # representation, so validators are replaced wholesale — carrying a
+    # stale `ETag` across a body change would make the next conditional
+    # GET answer 304 for content we do not actually hold.
     private def capture_validators(response : HTTP::Client::Response) : Nil
       @last_etag = response.headers["ETag"]?
       @last_modified = response.headers["Last-Modified"]?
+    end
+
+    # Refresh the validators from a 304. Unlike a 200 this describes the
+    # representation we already hold, so it *updates* rather than
+    # replaces: RFC 9110 §15.4.5 requires an `ETag` when one would have
+    # been sent on a 200, but a 304 need not repeat `Last-Modified`.
+    # Overwrite only what the response actually carries, so a rotated
+    # validator is picked up without a missing header wiping a good one.
+    private def refresh_validators(response : HTTP::Client::Response) : Nil
+      if etag = response.headers["ETag"]?
+        @last_etag = etag
+      end
+      if modified = response.headers["Last-Modified"]?
+        @last_modified = modified
+      end
     end
   end
 end

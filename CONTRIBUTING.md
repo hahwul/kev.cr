@@ -6,9 +6,14 @@ Thanks for your interest in kev.cr.
 
 ```sh
 shards install
-crystal spec                # 184 examples
+crystal spec
 crystal tool format --check
+./scripts/check_self_contained.sh   # every src/kev file must stand alone
 ```
+
+CI runs all three. The last one compiles each file under `src/kev/` on its
+own and exercises the surface it declares, so a missing `require` cannot
+hide behind `src/kev.cr` requiring the file for you.
 
 Run an example end-to-end (some examples reach out to the CISA feed):
 
