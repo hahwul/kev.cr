@@ -71,7 +71,7 @@ end
 
 ## Redirects are not followed
 
-`KEV::Client` deliberately does **not** follow `3xx` redirects. CISA's feed URL has been stable, and a silent follow could route the client to an attacker-controlled host if the upstream is ever compromised. A `301` / `302` surfaces as a `FetchError` so you notice and update your configuration.
+`KEV::Client` deliberately does **not** follow redirects by default. CISA's feed URL has been stable, and a silent follow could route the client to an attacker-controlled host if the upstream is ever compromised. A `301` / `302` / `303` / `307` / `308` surfaces as a `FetchError` so you notice and update your configuration; pass `max_redirects:` to opt in. `304 Not Modified` is never treated as a redirect — it carries no `Location`.
 
 If you need to point the client at a known mirror or proxy, pass that URL to `KEV::Client.new(url: ...)` directly.
 

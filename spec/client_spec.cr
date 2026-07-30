@@ -155,6 +155,56 @@ describe KEV::Client do
     end
   end
 
+  it "follows a redirect when max_redirects allows it" do
+    with_stub_server do |_, base, _|
+      catalog = KEV::Client.new("#{base}/redirect", max_redirects: 1).fetch
+      catalog.size.should eq(4)
+    end
+  end
+
+  it "says the redirect budget ran out rather than blaming the status" do
+    # Two hops, one hop of budget. The old code fell through to the
+    # generic non-2xx branch and reported "returned HTTP 302 Found",
+    # which reads like the server misbehaved rather than like the client
+    # gave up.
+    handler = ->(context : HTTP::Server::Context) do
+      context.response.status_code = 302
+      context.response.headers["Location"] = "/hop"
+      nil
+    end
+
+    with_scripted_server(handler) do |base|
+      client = KEV::Client.new("#{base}/feed.json", max_redirects: 1)
+      ex = expect_raises(KEV::FetchError, /redirect budget is exhausted/) { client.fetch }
+      ex.message.not_nil!.should contain("max_redirects=1")
+    end
+  end
+
+  it "does not chase a 304 as if it were a redirect" do
+    # `HTTP::Status#redirection?` is true for 304 Not Modified, so testing
+    # that predicate made a plain `fetch` against a caching intermediary
+    # fail with "redirect ... missing Location header" instead of
+    # surfacing the real status.
+    handler = ->(context : HTTP::Server::Context) do
+      context.response.status_code = 304
+      nil
+    end
+
+    with_scripted_server(handler) do |base|
+      client = KEV::Client.new("#{base}/feed.json", max_redirects: 5)
+      ex = expect_raises(KEV::FetchError, /304/) { client.fetch }
+      ex.message.not_nil!.should_not contain("Location")
+    end
+  end
+
+  it "still short-circuits a 304 on the conditional path with redirects enabled" do
+    with_stub_server do |_, base, _|
+      client = KEV::Client.new("#{base}/feed.json", max_redirects: 5)
+      client.fetch
+      client.fetch_if_modified.should be_nil
+    end
+  end
+
   describe "retry/backoff" do
     it "retries a transient 5xx and succeeds on a later attempt" do
       body = SpecFixtures.sample_catalog_json

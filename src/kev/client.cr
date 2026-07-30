@@ -67,6 +67,16 @@ module KEV
     # problem and is never retried.
     RETRIABLE_STATUS = {429, 500, 502, 503, 504}
 
+    # Status codes that carry a `Location` the client is expected to
+    # follow — the same set `HTTP::Client` itself chases.
+    #
+    # Deliberately *not* the whole 3xx range: `HTTP::Status#redirection?`
+    # answers `true` for 304 Not Modified (and for 305/306), none of which
+    # carry a `Location`. Testing that predicate made a plain `fetch`
+    # against a caching intermediary report "redirect … missing Location
+    # header" instead of the actual status.
+    FOLLOWABLE_REDIRECTS = {301, 302, 303, 307, 308}
+
     getter url : String
     getter user_agent : String
     getter connect_timeout : Time::Span
@@ -113,10 +123,12 @@ module KEV
     # `JSON::ParseException` propagates unchanged for raw JSON syntax
     # errors, matching the cvss.cr precedent.
     #
-    # NOTE: redirects are *not* followed. CISA's canonical feed URL has
-    # been stable, but if you point the client at a URL that responds
-    # with `3xx` you will get a `FetchError`, not the redirected body.
-    # Resolve the final URL yourself and pass it to `initialize`.
+    # NOTE: redirects are not followed by default (`max_redirects` is
+    # `0`). CISA's canonical feed URL has been stable, so a `3xx` raises
+    # `FetchError` rather than silently following to a possibly untrusted
+    # host — resolve the final URL yourself and pass it to `initialize`,
+    # or raise `max_redirects` if you are pointing at a mirror or proxy
+    # that issues a canonical redirect.
     def fetch : Catalog
       response = get(extra_headers: HTTP::Headers.new)
       capture_validators(response)
@@ -188,7 +200,14 @@ module KEV
 
       return response if accept_304 && response.status_code == 304
 
-      if response.status.redirection? && redirects_left > 0
+      if FOLLOWABLE_REDIRECTS.includes?(response.status_code)
+        if redirects_left <= 0
+          raise FetchError.new(
+            "KEV feed at #{target_url} returned HTTP #{response.status_code} #{response.status_message} " \
+            "but the redirect budget is exhausted (max_redirects=#{max_redirects}). " \
+            "Resolve the final URL yourself, or construct the client with a higher max_redirects."
+          )
+        end
         location = response.headers["Location"]?
         raise FetchError.new("KEV feed redirect from #{target_url} missing Location header") unless location
         next_url = URI.parse(location).absolute? ? location : URI.parse(target_url).resolve(location).to_s
