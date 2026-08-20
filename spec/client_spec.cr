@@ -224,6 +224,18 @@ describe KEV::Client do
     end
   end
 
+  it "rejects an http(s) URL with no host as a FetchError" do
+    # These clear the scheme check and then blow up inside
+    # `HTTP::Client.new(uri)` with a bare `ArgumentError`, which is not
+    # part of the documented "FetchError on any transport failure"
+    # contract and is not catchable as a `KEV::Error`.
+    ["http:///feed.json", "https://", "https://:8080/x"].each do |url|
+      expect_raises(KEV::FetchError, /no host/) do
+        KEV::Client.new(url).fetch
+      end
+    end
+  end
+
   it "does not follow 3xx redirects (documented behaviour)" do
     # If CISA ever 301s to a new URL we want a loud failure so the
     # caller updates their config, not silent following to a possibly

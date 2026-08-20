@@ -4,6 +4,36 @@
 
 ### Fixed
 
+- **Impossible dates escaped as `ArgumentError`.** `Time.parse_utc` /
+  `Time.parse_iso8601` reach `Time.utc` with the parsed components and let
+  it raise a bare `ArgumentError` for a day that does not exist
+  (`"2024-02-30"`, `"2024-13-01"`, `"2024-01-00"`, `"0000-01-01"`). That is
+  not a `Time::Format::Error`, so it slipped past the rescue in
+  `Vulnerability`/`Catalog` and out of `KEV::Error` entirely — including
+  through `KEV.parse?`, `Catalog.parse?`, and `Catalog.parse_csv?`, all of
+  which are documented to answer `nil`. Affects `dateAdded`, `dueDate`, and
+  `dateReleased`, on both the JSON and CSV paths.
+- **`dateAdded` / `dueDate` accepted values that are not `YYYY-MM-DD`.**
+  `Time.parse_utc` stops as soon as its format string is satisfied and
+  ignores the remainder, and reads unpadded components — so
+  `"2024-01-02T00:00:00Z"` silently decayed to a bare date, `"2024-01-02junk"`
+  parsed clean, and `"2024-1-2"` was accepted. The schema declares these
+  `format: date`; the shape is now enforced up front.
+- **`dateReleased` lost sub-millisecond precision.** The fraction was
+  trimmed to three digits before parsing, on the premise that
+  `Time.parse_iso8601` could not read more — it reads up to nine. The live
+  feed publishes a 4-digit fraction, so every parse discarded a digit CISA
+  published. The value is now parsed as published and re-emitted at the
+  narrowest of 3/6/9 fraction digits that preserves it, keeping `parse →
+  to_json → parse` lossless. Whole milliseconds still emit CISA's canonical
+  `.sssZ`.
+- **`Client`** raised a bare `ArgumentError` from `HTTP::Client` for an
+  `http(s)` URL with no host (`"http:///feed.json"`, `"https://:8080/x"`) —
+  these cleared the scheme check and then failed outside the documented
+  "`FetchError` on any transport failure" contract. Now a `FetchError`.
+- **`Catalog.parse_csv`** failed a whole feed with "invalid value '' for
+  field 'cveID'" when it hit a blank line, such as the one a stray trailing
+  newline leaves behind. Wholly empty rows are skipped.
 - **Deadline off-by-one.** `Vulnerability#overdue?` compared `due_date <
   now`, so every entry reported itself overdue from one second past
   midnight on the day it was actually still due. It now compares against
