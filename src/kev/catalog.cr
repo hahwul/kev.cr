@@ -119,6 +119,12 @@ module KEV
 
       vulns = [] of Vulnerability
       while csv.next
+        # A wholly empty row carries no record — it is the blank line a
+        # stray trailing newline leaves behind, and every CSV reader in
+        # common use skips it. Parsing it instead reported the file as
+        # broken with "invalid value '' for field 'cveID'".
+        next if blank_row?(csv)
+
         cve_id = csv["cveID"]
         unless Vulnerability::CVE_ID_PATTERN.matches?(cve_id)
           raise InvalidValueError.new("cveID", cve_id)
@@ -188,6 +194,10 @@ module KEV
       value.empty? ? nil : value
     end
 
+    private def self.blank_row?(csv : ::CSV) : Bool
+      csv.row.to_a.all?(&.empty?)
+    end
+
     private def self.csv_cwes(raw : String, cve_id : String) : Array(String)
       return [] of String if raw.empty?
       raw.split(CSV_CWE_SEPARATOR).map do |code|
@@ -199,9 +209,15 @@ module KEV
       end
     end
 
+    # Same contract as `Vulnerability.parse_date` — see the note there on
+    # why the shape is gated up front and why `ArgumentError` has to be
+    # caught alongside `Time::Format::Error`.
     private def self.parse_csv_date(raw : String, field : String, cve_id : String) : Time
+      unless Vulnerability::DATE_PATTERN.matches?(raw)
+        raise ParseError.new("malformed #{field} '#{raw}' for #{cve_id}")
+      end
       Time.parse_utc(raw, "%Y-%m-%d")
-    rescue Time::Format::Error
+    rescue Time::Format::Error | ArgumentError
       raise ParseError.new("malformed #{field} '#{raw}' for #{cve_id}")
     end
 
@@ -515,20 +531,41 @@ module KEV
       end
     end
 
-    # CISA emits ISO-8601 with `Z` suffix and a fractional-seconds field
-    # whose precision drifts (the feed has been seen with 3 *and* 4 digits,
-    # e.g. `".608Z"` and `".6086Z"`). `Time.parse_iso8601` only accepts up
-    # to millisecond precision, so trim any longer fraction up front rather
-    # than parse-then-retry on exception.
+    # CISA emits ISO-8601 with a `Z` suffix and a fractional-seconds field
+    # whose width drifts — the feed has been seen with 3 *and* 4 digits
+    # (`".608Z"`, `".1366Z"`). `Time.parse_iso8601` consumes up to nine
+    # fraction digits, so the string is handed over as published rather
+    # than pre-trimmed: trimming to three dropped whatever CISA put past
+    # the millisecond.
+    #
+    # An impossible instant (`"2024-02-30T00:00:00Z"`, `"…T25:00:00Z"`) is
+    # well-formed enough for the parser to reach `Time.utc`, which raises a
+    # bare `ArgumentError` rather than a `Time::Format::Error` — catch both
+    # so neither escapes as a non-KEV exception.
     private def self.parse_datetime(raw : String) : Time
-      normalised = raw.sub(/\.(\d{3})\d+(Z|[+\-]\d)/, ".\\1\\2")
-      Time.parse_iso8601(normalised)
-    rescue ex : Time::Format::Error
+      Time.parse_iso8601(raw)
+    rescue ex : Time::Format::Error | ArgumentError
       raise ParseError.new("malformed dateReleased '#{raw}': #{ex.message}")
     end
 
+    # `to_rfc3339` only offers 0/3/6/9 fraction digits, so pick the
+    # narrowest width that still reproduces the stored nanoseconds. CISA
+    # documents the field as `YYYY-MM-DDTHH:mm:ss.sssZ`, and a whole
+    # number of milliseconds is by far the common case, so this emits three
+    # digits unless the source carried finer precision — which would
+    # otherwise be lost on the way back out, breaking the `parse → to_json
+    # → parse` round-trip this class documents.
     private def format_datetime(t : Time) : String
-      t.to_utc.to_rfc3339(fraction_digits: 3)
+      utc = t.to_utc
+      digits =
+        if utc.nanosecond % 1_000_000 == 0
+          3
+        elsif utc.nanosecond % 1_000 == 0
+          6
+        else
+          9
+        end
+      utc.to_rfc3339(fraction_digits: digits)
     end
 
     private def self.require_string(obj, key : String) : String

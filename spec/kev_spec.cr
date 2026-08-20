@@ -37,5 +37,32 @@ describe KEV do
     it "returns nil on schema violations" do
       KEV.parse?(%({"catalogVersion": "x"})).should be_nil
     end
+
+    it "returns nil instead of leaking ArgumentError on an impossible date" do
+      # `Time.parse_utc` raises a bare `ArgumentError` for a date whose
+      # components parse but name no real day. It is not a `KEV::Error`, so
+      # it escaped the rescue here and `parse?` raised.
+      json = <<-JSON
+        {
+          "catalogVersion": "1.0",
+          "dateReleased": "2024-01-01T00:00:00.000Z",
+          "count": 1,
+          "vulnerabilities": [
+            {
+              "cveID": "CVE-2024-1234",
+              "vendorProject": "ACME",
+              "product": "Widget",
+              "vulnerabilityName": "Foo",
+              "dateAdded": "2024-02-30",
+              "shortDescription": "x",
+              "requiredAction": "x",
+              "dueDate": "2024-03-01"
+            }
+          ]
+        }
+        JSON
+      KEV.parse?(json).should be_nil
+      expect_raises(KEV::ParseError, /dateAdded/) { KEV.parse(json) }
+    end
   end
 end

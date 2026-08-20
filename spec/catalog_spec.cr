@@ -39,6 +39,43 @@ describe KEV::Catalog do
       c.date_released.year.should eq(2026)
     end
 
+    it "keeps sub-millisecond precision published in dateReleased" do
+      # The fraction used to be trimmed to three digits before parsing, on
+      # the premise that `Time.parse_iso8601` could not read more. It reads
+      # up to nine — so the trim was pure loss, and it fires on the live
+      # feed, which publishes a 4-digit fraction (e.g. ".1366Z").
+      c = KEV::Catalog.parse(%({"catalogVersion":"1.0","dateReleased":"2026-08-19T17:00:32.1366Z","count":0,"vulnerabilities":[]}))
+      c.date_released.should eq(Time.utc(2026, 8, 19, 17, 0, 32, nanosecond: 136_600_000))
+      c.date_released.nanosecond.should eq(136_600_000)
+    end
+
+    it "round-trips a sub-millisecond dateReleased through to_json" do
+      # `to_rfc3339` is capped at 0/3/6/9 fraction digits, so emitting a
+      # fixed three would put the precision straight back on the floor and
+      # break `parse → to_json → parse`.
+      original = KEV::Catalog.parse(%({"catalogVersion":"1.0","dateReleased":"2026-08-19T17:00:32.1366Z","count":0,"vulnerabilities":[]}))
+      emitted = JSON.parse(original.to_json)["dateReleased"].as_s
+      emitted.should eq("2026-08-19T17:00:32.136600Z")
+      KEV::Catalog.parse(original.to_json).date_released.should eq(original.date_released)
+    end
+
+    it "still emits the canonical 3-digit fraction for whole milliseconds" do
+      # CISA documents the field as YYYY-MM-DDTHH:mm:ss.sssZ, and that is
+      # the overwhelmingly common case — it must not widen to six digits.
+      c = SpecFixtures.sample_catalog # dateReleased: "2024-01-15T16:55:06.608Z"
+      JSON.parse(c.to_json)["dateReleased"].as_s.should eq("2024-01-15T16:55:06.608Z")
+    end
+
+    it "raises ParseError — not ArgumentError — on an impossible dateReleased" do
+      # Same stdlib trapdoor as the per-entry dates: the components parse,
+      # then `Time.utc` rejects them with a bare `ArgumentError`.
+      ["2024-02-30T00:00:00Z", "2024-01-01T25:00:00Z", "2024-13-01T00:00:00Z"].each do |raw|
+        json = %({"catalogVersion":"1.0","dateReleased":#{raw.to_json},"count":0,"vulnerabilities":[]})
+        expect_raises(KEV::ParseError, /dateReleased/) { KEV::Catalog.parse(json) }
+        KEV::Catalog.parse?(json).should be_nil
+      end
+    end
+
     it "raises MissingFieldError when catalogVersion is missing" do
       expect_raises(KEV::MissingFieldError, /catalogVersion/) do
         KEV::Catalog.parse(%({"dateReleased": "2024-01-01T00:00:00Z", "count": 0, "vulnerabilities": []}))
@@ -430,6 +467,43 @@ describe KEV::Catalog do
 
     it ".parse_csv? returns nil on malformed input" do
       KEV::Catalog.parse_csv?("not csv at all\n,,,").should be_nil
+    end
+
+    it "raises ParseError — not ArgumentError — on an impossible date" do
+      csv = <<-CSV
+        cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes
+        CVE-2021-44228,Apache,Log4j2,RCE,2021-02-30,d,a,2021-12-24,Known,,CWE-917
+        CSV
+      expect_raises(KEV::ParseError, /dateAdded/) { KEV::Catalog.parse_csv(csv) }
+      # `parse_csv?` is documented to answer nil rather than raise; the
+      # leaked ArgumentError went straight through its rescue clause.
+      KEV::Catalog.parse_csv?(csv).should be_nil
+    end
+
+    it "rejects a CSV date that is not exactly YYYY-MM-DD" do
+      csv = <<-CSV
+        cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes
+        CVE-2021-44228,Apache,Log4j2,RCE,2021-12-10T00:00:00Z,d,a,2021-12-24,Known,,CWE-917
+        CSV
+      expect_raises(KEV::ParseError, /dateAdded/) { KEV::Catalog.parse_csv(csv) }
+    end
+
+    it "skips wholly blank rows instead of reporting a broken cveID" do
+      # A stray trailing newline leaves a blank line behind, which the CSV
+      # reader surfaces as a row of empty cells. Parsing it as a record
+      # failed the whole feed with "invalid value '' for field 'cveID'".
+      header = "cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes"
+      row = "CVE-2021-44228,Apache,Log4j2,RCE,2021-12-10,d,a,2021-12-24,Known,,CWE-917"
+
+      KEV::Catalog.parse_csv("#{header}\n#{row}\n\n").size.should eq(1)
+      KEV::Catalog.parse_csv("#{header}\n\n#{row}\n").size.should eq(1)
+      # An all-empty data row is a blank record, not a malformed one.
+      KEV::Catalog.parse_csv("#{header}\n#{row}\n,,,,,,,,,,\n").size.should eq(1)
+
+      # A row that genuinely names no CVE is still an error.
+      expect_raises(KEV::InvalidValueError, /cveID/) do
+        KEV::Catalog.parse_csv("#{header}\n,Apache,Log4j2,RCE,2021-12-10,d,a,2021-12-24,Known,,CWE-917\n")
+      end
     end
   end
 

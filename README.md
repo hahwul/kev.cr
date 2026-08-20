@@ -167,17 +167,27 @@ v.cve_year                     # => 2021
 
 ### Equality, ordering, sets
 
-`Vulnerability` equality is keyed by `cve_id`, so deduping across feed
-snapshots is straightforward:
+`Vulnerability` equality is *structural* — two records are `==` only when
+every field matches — so a `Set` deduplicates identical snapshots but
+keeps two revisions of the same CVE apart:
 
 ```crystal
 seen = Set(KEV::Vulnerability).new
 catalog.each { |v| seen << v }
 ```
 
-Vectors sort by `date_added` (with `cve_id` as a stable tiebreak), and
-`Catalog` is `Enumerable` + `Indexable`, so all the usual collection
-methods work directly.
+To dedup by identity across snapshots, where CISA may have edited the
+description, notes, or CWEs in place, key on the CVE id instead:
+
+```crystal
+by_cve = catalog.to_h { |v| {v.cve_id, v} }   # or `catalog.find(id)`
+old.same_cve?(new)                            # => true for a revised entry
+```
+
+Entries sort by `date_added` (with `cve_id` as a tiebreak, then the
+remaining fields so `<=>` agrees with `==`), and `Catalog` is
+`Enumerable` + `Indexable`, so all the usual collection methods work
+directly.
 
 ### JSON serialization
 

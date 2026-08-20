@@ -191,6 +191,13 @@ module KEV
       unless {"http", "https"}.includes?(uri.scheme)
         raise FetchError.new("KEV feed URL must be http(s): #{target_url}")
       end
+      # `HTTP::Client.new(uri)` raises a bare `ArgumentError` for a URL
+      # that has a scheme but no authority (`"http:///feed.json"`,
+      # `"https://:8080/x"`). Every other bad-URL case here answers with
+      # `FetchError`, so check the host up front and keep the contract.
+      if (host = uri.host).nil? || host.empty?
+        raise FetchError.new("KEV feed URL has no host: #{target_url}")
+      end
 
       headers = HTTP::Headers{
         "Accept"     => accept,
@@ -229,8 +236,8 @@ module KEV
 
     # Issue a single GET, transparently retrying transient failures —
     # connection resets, timeouts, and the retriable 5xx/429 status family —
-    # with capped exponential backoff and jitter. A `Retry-After` header on a
-    # 429/503 overrides the computed backoff. Non-retriable statuses (2xx,
+    # with capped exponential backoff and jitter. A `Retry-After` header on
+    # any of those overrides the computed backoff. Non-retriable statuses (2xx,
     # 3xx, and 4xx like 404) are returned to the caller untouched; redirect
     # and 304 handling stays in `do_get`.
     #
