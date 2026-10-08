@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- **`forensicTriage` was dropped.** The CISA schema added the property for
+  BOD 26-04 and every live-feed entry (and a CSV column) carries it, but it
+  was discarded on parse — `to_json`, `to_h`, and `to_csv` lost it, and
+  `==` / `Catalog#diff` could not see it change. It is now kept verbatim on
+  `Vulnerability#forensic_triage` and emitted in the feed's position. CSVs
+  without the column still parse.
+- **`dateReleased` accepted trailing junk.** `Time.parse_iso8601` ignores
+  whatever follows the part it consumed, so `"2024-01-01T00:00:00Zjunk"`
+  parsed clean. The RFC 3339 shape (`format: date-time`) is now enforced up
+  front.
 - **Impossible dates escaped as `ArgumentError`.** `Time.parse_utc` /
   `Time.parse_iso8601` reach `Time.utc` with the parsed components and let
   it raise a bare `ArgumentError` for a day that does not exist

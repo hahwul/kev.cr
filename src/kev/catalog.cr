@@ -90,6 +90,7 @@ module KEV
       requiredAction
       dueDate
       knownRansomwareCampaignUse
+      forensicTriage
       notes
       cwes
     ]
@@ -112,7 +113,8 @@ module KEV
       title : String? = nil,
     ) : Catalog
       csv = ::CSV.new(strip_bom(input), headers: true, strip: false)
-      missing = CSV_HEADERS - csv.headers
+      # `forensicTriage` arrived with BOD 26-04; older CSVs lack the column.
+      missing = CSV_HEADERS - %w[forensicTriage] - csv.headers
       unless missing.empty?
         raise ParseError.new("CSV is missing required column(s): #{missing.join(", ")}")
       end
@@ -148,6 +150,7 @@ module KEV
           due_date: parse_csv_date(csv["dueDate"], "dueDate", cve_id),
           known_ransomware_campaign_use: ransomware_raw.try { |s| RansomwareUse.parse?(s) },
           known_ransomware_campaign_use_raw: ransomware_raw,
+          forensic_triage: csv["forensicTriage"]?.try { |s| blank_to_nil(s) },
           notes: blank_to_nil(csv["notes"]),
           cwes: cwes,
         )
@@ -531,6 +534,8 @@ module KEV
       end
     end
 
+    private DATETIME_PATTERN = /\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})\z/
+
     # CISA emits ISO-8601 with a `Z` suffix and a fractional-seconds field
     # whose width drifts — the feed has been seen with 3 *and* 4 digits
     # (`".608Z"`, `".1366Z"`). `Time.parse_iso8601` consumes up to nine
@@ -542,7 +547,13 @@ module KEV
     # well-formed enough for the parser to reach `Time.utc`, which raises a
     # bare `ArgumentError` rather than a `Time::Format::Error` — catch both
     # so neither escapes as a non-KEV exception.
+    #
+    # The parser ignores trailing input, so the RFC 3339 shape (`format:
+    # date-time`) is gated first — else `"…T00:00:00Zjunk"` parses clean.
     private def self.parse_datetime(raw : String) : Time
+      unless DATETIME_PATTERN.matches?(raw)
+        raise ParseError.new("malformed dateReleased '#{raw}'")
+      end
       Time.parse_iso8601(raw)
     rescue ex : Time::Format::Error | ArgumentError
       raise ParseError.new("malformed dateReleased '#{raw}': #{ex.message}")

@@ -66,6 +66,15 @@ describe KEV::Catalog do
       JSON.parse(c.to_json)["dateReleased"].as_s.should eq("2024-01-15T16:55:06.608Z")
     end
 
+    it "rejects a dateReleased that is not an RFC 3339 date-time" do
+      # The stdlib parser stops once its pattern is satisfied and ignores
+      # the rest, so trailing junk used to parse clean.
+      ["2024-01-01T00:00:00Zjunk", "2024-01-01T00:00:00.123Z extra", "20240101T000000Z", "2024-01-01"].each do |raw|
+        json = %({"catalogVersion":"1.0","dateReleased":#{raw.to_json},"count":0,"vulnerabilities":[]})
+        expect_raises(KEV::ParseError, /dateReleased/) { KEV::Catalog.parse(json) }
+      end
+    end
+
     it "raises ParseError — not ArgumentError — on an impossible dateReleased" do
       # Same stdlib trapdoor as the per-entry dates: the components parse,
       # then `Time.utc` rejects them with a bare `ArgumentError`.
@@ -373,7 +382,7 @@ describe KEV::Catalog do
     it "writes the canonical header row in CISA order" do
       catalog = SpecFixtures.sample_catalog
       header = catalog.to_csv.lines.first
-      header.should eq("cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,notes,cwes")
+      header.should eq("cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,forensicTriage,notes,cwes")
     end
   end
 
@@ -415,6 +424,17 @@ describe KEV::Catalog do
       heartbleed.notes.should be_nil
       heartbleed.cwes.should be_empty
       heartbleed.known_ransomware_campaign_use.should eq(KEV::RansomwareUse::Unknown)
+    end
+
+    it "reads forensicTriage from the live CISA column layout" do
+      # Header and row shape as published in CISA's CSV since BOD 26-04.
+      csv = <<-CSV
+        cveID,vendorProject,product,vulnerabilityName,dateAdded,shortDescription,requiredAction,dueDate,knownRansomwareCampaignUse,forensicTriage,notes,cwes
+        CVE-2026-0001,ACME,Widget,Foo,2026-01-01,d,a,2026-01-15,Unknown,Yes,https://example.org,CWE-79
+        CSV
+      catalog = KEV::Catalog.parse_csv(csv)
+      catalog["CVE-2026-0001"].forensic_triage.should eq("Yes")
+      catalog.to_csv.should eq(csv + "\n")
     end
 
     it "raises when a required column is missing from the header" do
