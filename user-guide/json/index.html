@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Serialize and re-parse KEV data losslessly against the upstream feed">
+  <title>JSON Round-Trip - kev.cr</title>
+  <script>(function(){try{var t=localStorage.getItem("hwaro-theme");if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t)}}catch(e){}})()</script>
+  <meta property="og:title" content="JSON Round-Trip">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://kev.cr.hahwul.com/user-guide/json/">
+  <meta property="og:description" content="Serialize and re-parse KEV data losslessly against the upstream feed">
+  <meta property="og:image" content="https://kev.cr.hahwul.com/og-images/user-guide-json.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="JSON Round-Trip">
+  <meta name="twitter:description" content="Serialize and re-parse KEV data losslessly against the upstream feed">
+  <meta name="twitter:image" content="https://kev.cr.hahwul.com/og-images/user-guide-json.png">
+  <link rel="canonical" href="https://kev.cr.hahwul.com/user-guide/json/">
+  <link rel="stylesheet" href="https://kev.cr.hahwul.com/css/style.css">
+  
+  <meta name="apple-mobile-web-app-title" content="kev.cr">
+
+</head>
+<body data-section="user-guide">
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="docs-header">
+  <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="sidebar">
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h12M2 8h12M2 11.5h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  </button>
+  <a href="https://kev.cr.hahwul.com/" class="logo">kev.cr <span>Documentation</span></a>
+  <nav class="header-nav" aria-label="Sections">
+    <a href="https://kev.cr.hahwul.com/user-guide/" class="active">User Guide</a><a href="https://kev.cr.hahwul.com/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <button class="search-trigger" type="button" onclick="openSearch()" title="Search (⌘K)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span>
+      <kbd>&#8984;K</kbd>
+    </button>
+    <button class="theme-toggle" type="button" data-mode="auto" aria-label="Theme: auto" title="Theme: auto">
+      <svg class="tt-auto" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg>
+      <svg class="tt-light" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 .9v2M8 13.1v2M.9 8h2M13.1 8h2M2.98 2.98l1.42 1.42M11.6 11.6l1.42 1.42M13.02 2.98L11.6 4.4M4.4 11.6l-1.42 1.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <svg class="tt-dark" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.4 9.9A5.8 5.8 0 0 1 6.1 2.6a5.8 5.8 0 1 0 7.3 7.3z" fill="currentColor"/></svg>
+    </button>
+    <a class="gh-link" href="https://github.com/hahwul/kev.cr" aria-label="GitHub repository">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+    </a>
+  </div>
+</header>
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-modal">
+    <div class="search-input-wrap">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="searchInput" aria-label="Search" placeholder="Search documentation..." autocomplete="off">
+      <kbd onclick="closeSearch()">ESC</kbd>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+<div class="docs-container">
+<aside class="docs-sidebar" id="sidebar">
+
+  
+  <div class="sidebar-section">
+    <div class="sidebar-title">User Guide</div>
+    <ul class="sidebar-links">
+      <li><a href="https://kev.cr.hahwul.com/user-guide/">Overview</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/user-guide/getting-started/">Getting Started</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/user-guide/basic-usage/">Basic Usage</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/user-guide/queries/">Queries &amp; Filters</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/user-guide/fetching/">Fetching the Live Feed</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/user-guide/json/" class="active" aria-current="page">JSON Round-Trip</a></li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <div class="sidebar-title">API Reference</div>
+    <ul class="sidebar-links">
+      <li><a href="https://kev.cr.hahwul.com/api-reference/">Overview</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/catalog/">Catalog</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/vulnerability/">Vulnerability</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/query/">Query</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/client/">Client</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/ransomware-use/">RansomwareUse</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/errors/">Errors</a></li>
+      
+    </ul>
+  </div>
+  
+</aside>
+<div class="sidebar-scrim"></div>
+  <main id="main" class="docs-main">
+    <h1>JSON Round-Trip</h1>
+    <p class="lede">Serialize and re-parse KEV data losslessly against the upstream feed</p>
+    <p><code>Vulnerability#to_json</code> and <code>Catalog#to_json</code> emit output that matches the canonical CISA feed shape — field names, ordering, and key presence are preserved. The result re-parses through <code>KEV::Catalog.parse</code> without information loss.</p>
+<h2 id="catalog-round-trip">Catalog round-trip</h2>
+<pre><code class="language-crystal hljs">catalog  <span class="hljs-operator">=</span> <span class="hljs-variable constant_">KEV</span>.parse(<span class="hljs-variable constant_">File</span>.read(<span class="hljs-string">&quot;kev.json&quot;</span>))
+emitted  <span class="hljs-operator">=</span> catalog.to_json          <span class="hljs-comment"># canonical KEV-shaped JSON</span>
+reparsed <span class="hljs-operator">=</span> <span class="hljs-variable constant_">KEV::Catalog</span>.parse(emitted)
+
+reparsed.size <span class="hljs-operator">==</span> catalog.size       <span class="hljs-comment"># true</span>
+reparsed.vulnerabilities <span class="hljs-operator">==</span> catalog.vulnerabilities  <span class="hljs-comment"># true</span>
+</code></pre>
+<h2 id="verified-against-the-live-feed">Verified against the live feed</h2>
+<p>The library is regression-tested against the live CISA feed: every entry's
+field set is preserved across <code>parse → to_json → parse</code>. The most subtle
+case — entries with <code>&quot;cwes&quot;: []</code> — is preserved verbatim. The feed always
+emits the key even when no CWEs are tagged, so the library does too.</p>
+<pre><code class="language-crystal hljs">catalog[<span class="hljs-string">&quot;CVE-2014-0160&quot;</span>].cwes        <span class="hljs-comment"># =&gt; []</span>
+<span class="hljs-variable constant_">JSON</span>.parse(catalog[<span class="hljs-string">&quot;CVE-2014-0160&quot;</span>].to_json)[<span class="hljs-string">&quot;cwes&quot;</span>]
+<span class="hljs-comment"># =&gt; JSON::Any([])      (always present, even when empty)</span>
+</code></pre>
+<h2 id="single-vulnerability-serialization">Single-vulnerability serialization</h2>
+<p>You can serialize a single <code>Vulnerability</code> directly — useful for SIEM events, message-queue payloads, or per-CVE storage:</p>
+<pre><code class="language-crystal hljs">v <span class="hljs-operator">=</span> catalog[<span class="hljs-string">&quot;CVE-2021-44228&quot;</span>]
+<span class="hljs-variable constant_">File</span>.write(<span class="hljs-string">&quot;log4j.json&quot;</span>, v.to_json)
+<span class="hljs-variable constant_">KEV::Vulnerability</span>.from_json(<span class="hljs-variable constant_">File</span>.read(<span class="hljs-string">&quot;log4j.json&quot;</span>))  <span class="hljs-comment"># =&gt; Vulnerability</span>
+</code></pre>
+<h2 id="hash-export">Hash export</h2>
+<p>If you need a plain <code>Hash</code> instead of a JSON string (e.g. for further mutation or for piping into a templating engine), use <code>#to_h</code>:</p>
+<pre><code class="language-crystal hljs">catalog[<span class="hljs-string">&quot;CVE-2021-44228&quot;</span>].to_h
+<span class="hljs-comment"># =&gt; {&quot;cveID&quot; =&gt; &quot;CVE-2021-44228&quot;, &quot;vendorProject&quot; =&gt; &quot;Apache&quot;, ...,</span>
+<span class="hljs-comment">#     &quot;cwes&quot; =&gt; [&quot;CWE-20&quot;, &quot;CWE-917&quot;]}</span>
+</code></pre>
+<p>Keys are the canonical CISA field names. Dates are formatted as <code>YYYY-MM-DD</code> strings.</p>
+<h2 id="persisting-filtered-subsets">Persisting filtered subsets</h2>
+<p><code>Vulnerability</code> serialises element-by-element, so <code>Array#to_json</code> works directly for a subset:</p>
+<pre><code class="language-crystal hljs">ransomware <span class="hljs-operator">=</span> catalog.query.ransomware.to_a
+<span class="hljs-variable constant_">File</span>.write(<span class="hljs-string">&quot;kev-ransomware.json&quot;</span>, ransomware.to_json)
+</code></pre>
+<p>The output is a JSON array of vulnerability objects. To produce a <em>catalog-shaped</em> envelope (with <code>catalogVersion</code>, <code>count</code>, etc.), construct a new <code>Catalog</code>:</p>
+<pre><code class="language-crystal hljs">ransomware <span class="hljs-operator">=</span> catalog.query.ransomware.to_a
+subset <span class="hljs-operator">=</span> <span class="hljs-variable constant_">KEV::Catalog</span>.new(
+  catalog_version: <span class="hljs-string">&quot;</span><span class="hljs-subst">#{</span>catalog.catalog_version<span class="hljs-subst">}</span><span class="hljs-string">-ransomware&quot;</span>,
+  date_released:   catalog.date_released,
+  count:           ransomware.size,
+  vulnerabilities: ransomware,
+  title:           <span class="hljs-string">&quot;Ransomware subset of </span><span class="hljs-subst">#{</span>catalog.title<span class="hljs-subst">}</span><span class="hljs-string">&quot;</span>,
+)
+<span class="hljs-variable constant_">File</span>.write(<span class="hljs-string">&quot;kev-ransomware.json&quot;</span>, subset.to_json)
+</code></pre>
+<h2 id="known-precision-gotcha">Known precision gotcha</h2>
+<p><code>dateReleased</code> arrives from CISA with 3- or 4-digit fractional seconds. Crystal's <code>Time.parse_iso8601</code> only accepts up to 3 digits, so the library normalises the input to millisecond precision before parsing. A 4-digit input (<code>.6086Z</code>) round-trips as 3 digits (<code>.608Z</code>).</p>
+<p>This affects only the catalog-level <code>dateReleased</code> timestamp; per-entry <code>dateAdded</code> / <code>dueDate</code> are date-only (<code>YYYY-MM-DD</code>) and have no precision concern.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><strong><a href="/api-reference/vulnerability/#to_json">Vulnerability API</a></strong> — <code>to_json</code>, <code>to_h</code>, <code>from_json</code>.</li>
+<li><strong><a href="/api-reference/errors/">Errors</a></strong> — what raises during JSON ingestion.</li>
+</ul>
+
+    
+    <nav class="page-nav" aria-label="Adjacent pages">
+      
+      <a class="page-nav-link page-nav-prev" href="https://kev.cr.hahwul.com/user-guide/fetching/" rel="prev">
+        <span class="page-nav-label">Previous</span>
+        <span class="page-nav-title">Fetching the Live Feed</span>
+      </a>
+      
+      
+      <a class="page-nav-link page-nav-next" href="https://kev.cr.hahwul.com/api-reference/" rel="next">
+        <span class="page-nav-label">Next</span>
+        <span class="page-nav-title">API Reference</span>
+      </a>
+      
+    </nav>
+    
+    <div class="docs-footer">
+      <p>kev.cr documentation</p>
+      <div class="docs-footer-links">
+        <a href="https://github.com/hahwul/kev.cr">GitHub</a>
+        <a href="https://github.com/hahwul/hwaro">Built with Hwaro</a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="https://kev.cr.hahwul.com/js/search.js"></script>
+<script>
+(function () {
+  var KEY = "hwaro-theme";
+  var MODES = ["auto", "light", "dark"];
+  var root = document.documentElement;
+  var btn = document.querySelector(".theme-toggle");
+  if (!btn) return;
+  function apply(mode) {
+    if (mode === "auto") {
+      root.removeAttribute("data-theme");
+      try { localStorage.removeItem(KEY); } catch (e) {}
+    } else {
+      root.setAttribute("data-theme", mode);
+      try { localStorage.setItem(KEY, mode); } catch (e) {}
+    }
+    btn.setAttribute("data-mode", mode);
+    btn.setAttribute("aria-label", "Theme: " + mode);
+    btn.title = "Theme: " + mode;
+  }
+  var stored = "auto";
+  try { var t = localStorage.getItem(KEY); if (t === "light" || t === "dark") stored = t; } catch (e) {}
+  btn.addEventListener("click", function () {
+    apply(MODES[(MODES.indexOf(btn.getAttribute("data-mode")) + 1) % MODES.length]);
+  });
+  apply(stored);
+})();
+(function () {
+  var btn = document.querySelector(".nav-toggle");
+  var scrim = document.querySelector(".sidebar-scrim");
+  var sidebar = document.getElementById("sidebar");
+  if (!btn) return;
+  function set(open) {
+    document.body.classList.toggle("nav-open", open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  btn.addEventListener("click", function () {
+    set(!document.body.classList.contains("nav-open"));
+  });
+  if (scrim) scrim.addEventListener("click", function () { set(false); });
+  if (sidebar) sidebar.addEventListener("click", function (e) {
+    if (e.target.closest("a")) set(false);
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") set(false);
+  });
+})();
+</script>
+
+</body>
+</html>

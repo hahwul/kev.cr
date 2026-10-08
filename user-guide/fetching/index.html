@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Use KEV::Client to pull and poll the CISA KEV feed over HTTPS">
+  <title>Fetching the Live Feed - kev.cr</title>
+  <script>(function(){try{var t=localStorage.getItem("hwaro-theme");if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t)}}catch(e){}})()</script>
+  <meta property="og:title" content="Fetching the Live Feed">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://kev.cr.hahwul.com/user-guide/fetching/">
+  <meta property="og:description" content="Use KEV::Client to pull and poll the CISA KEV feed over HTTPS">
+  <meta property="og:image" content="https://kev.cr.hahwul.com/og-images/user-guide-fetching.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Fetching the Live Feed">
+  <meta name="twitter:description" content="Use KEV::Client to pull and poll the CISA KEV feed over HTTPS">
+  <meta name="twitter:image" content="https://kev.cr.hahwul.com/og-images/user-guide-fetching.png">
+  <link rel="canonical" href="https://kev.cr.hahwul.com/user-guide/fetching/">
+  <link rel="stylesheet" href="https://kev.cr.hahwul.com/css/style.css">
+  
+  <meta name="apple-mobile-web-app-title" content="kev.cr">
+
+</head>
+<body data-section="user-guide">
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="docs-header">
+  <button class="nav-toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="sidebar">
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h12M2 8h12M2 11.5h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+  </button>
+  <a href="https://kev.cr.hahwul.com/" class="logo">kev.cr <span>Documentation</span></a>
+  <nav class="header-nav" aria-label="Sections">
+    <a href="https://kev.cr.hahwul.com/user-guide/" class="active">User Guide</a><a href="https://kev.cr.hahwul.com/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <button class="search-trigger" type="button" onclick="openSearch()" title="Search (⌘K)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span>
+      <kbd>&#8984;K</kbd>
+    </button>
+    <button class="theme-toggle" type="button" data-mode="auto" aria-label="Theme: auto" title="Theme: auto">
+      <svg class="tt-auto" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.75a6.25 6.25 0 0 1 0 12.5z" fill="currentColor"/></svg>
+      <svg class="tt-light" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 .9v2M8 13.1v2M.9 8h2M13.1 8h2M2.98 2.98l1.42 1.42M11.6 11.6l1.42 1.42M13.02 2.98L11.6 4.4M4.4 11.6l-1.42 1.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <svg class="tt-dark" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.4 9.9A5.8 5.8 0 0 1 6.1 2.6a5.8 5.8 0 1 0 7.3 7.3z" fill="currentColor"/></svg>
+    </button>
+    <a class="gh-link" href="https://github.com/hahwul/kev.cr" aria-label="GitHub repository">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+    </a>
+  </div>
+</header>
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-modal">
+    <div class="search-input-wrap">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="search" id="searchInput" aria-label="Search" placeholder="Search documentation..." autocomplete="off">
+      <kbd onclick="closeSearch()">ESC</kbd>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+<div class="docs-container">
+<aside class="docs-sidebar" id="sidebar">
+
+  
+  <div class="sidebar-section">
+    <div class="sidebar-title">User Guide</div>
+    <ul class="sidebar-links">
+      <li><a href="https://kev.cr.hahwul.com/user-guide/">Overview</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/user-guide/getting-started/">Getting Started</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/user-guide/basic-usage/">Basic Usage</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/user-guide/queries/">Queries &amp; Filters</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/user-guide/fetching/" class="active" aria-current="page">Fetching the Live Feed</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/user-guide/json/">JSON Round-Trip</a></li>
+      
+    </ul>
+  </div>
+  
+  <div class="sidebar-section">
+    <div class="sidebar-title">API Reference</div>
+    <ul class="sidebar-links">
+      <li><a href="https://kev.cr.hahwul.com/api-reference/">Overview</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/catalog/">Catalog</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/vulnerability/">Vulnerability</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/query/">Query</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/client/">Client</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/ransomware-use/">RansomwareUse</a></li>
+      
+      <li><a href="https://kev.cr.hahwul.com/api-reference/errors/">Errors</a></li>
+      
+    </ul>
+  </div>
+  
+</aside>
+<div class="sidebar-scrim"></div>
+  <main id="main" class="docs-main">
+    <h1>Fetching the Live Feed</h1>
+    <p class="lede">Use KEV::Client to pull and poll the CISA KEV feed over HTTPS</p>
+    <p>The <code>KEV::Client</code> class fetches the live CISA feed over HTTPS, parses it, and returns a <code>Catalog</code>. The module-level <code>KEV.fetch</code> is a thin wrapper for one-shot use.</p>
+<h2 id="one-shot-fetch">One-shot fetch</h2>
+<pre><code class="language-crystal hljs"><span class="hljs-keyword">require</span> <span class="hljs-string">&quot;kev&quot;</span>
+
+catalog <span class="hljs-operator">=</span> <span class="hljs-variable constant_">KEV</span>.fetch
+puts <span class="hljs-string">&quot;</span><span class="hljs-subst">#{</span>catalog.size<span class="hljs-subst">}</span><span class="hljs-string"> entries, released </span><span class="hljs-subst">#{</span>catalog.date_released<span class="hljs-subst">}</span><span class="hljs-string">&quot;</span>
+</code></pre>
+<p>The default endpoint is the canonical feed URL:</p>
+<pre><code>https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+</code></pre>
+<h2 id="long-lived-client-recommended-for-polling">Long-lived client (recommended for polling)</h2>
+<p>For repeated calls — a CI job, a cron sync, a Slack notifier — use a <code>KEV::Client</code> instance so you can short-circuit on unchanged feeds:</p>
+<pre><code class="language-crystal hljs">client <span class="hljs-operator">=</span> <span class="hljs-variable constant_">KEV::Client</span>.new
+first  <span class="hljs-operator">=</span> client.fetch
+later  <span class="hljs-operator">=</span> client.fetch_if_modified  <span class="hljs-comment"># =&gt; nil if the feed has not changed</span>
+</code></pre>
+<p><code>fetch_if_modified</code> sends <code>If-None-Match</code> (from the last <code>ETag</code>) and <code>If-Modified-Since</code> (from the last <code>Last-Modified</code> header) and returns <code>nil</code> on a <code>304 Not Modified</code> response. The first call (no validators yet) behaves like a regular <code>fetch</code>.</p>
+<p>A <code>304</code> still updates the stored validators with whatever it carries, so a long-lived poller follows the origin when it rotates an <code>ETag</code> instead of pinning the first pair it saw. Because a <code>304</code> need not repeat <code>Last-Modified</code>, a header the response omits leaves the stored value alone — unlike a <code>200</code>, which is a new representation and replaces both.</p>
+<pre><code class="language-crystal hljs">client.last_etag         <span class="hljs-comment"># =&gt; &quot;\&quot;kev-v1\&quot;&quot; (or nil before first fetch)</span>
+client.last_modified     <span class="hljs-comment"># =&gt; &quot;Wed, 15 May 2026 16:55:06 GMT&quot; (or nil)</span>
+</code></pre>
+<h2 id="configuration">Configuration</h2>
+<pre><code class="language-crystal hljs"><span class="hljs-variable constant_">KEV::Client</span>.new(
+  url: <span class="hljs-variable constant_">KEV::Client::DEFAULT_URL</span>,
+  user_agent: <span class="hljs-string">&quot;my-app/0.1 (+https://example.com)&quot;</span>,
+  connect_timeout: <span class="hljs-number">5</span>.seconds,
+  read_timeout: <span class="hljs-number">15</span>.seconds,
+)
+</code></pre>
+<p>A descriptive <code>User-Agent</code> is recommended — CISA may reach out to maintainers if a misbehaving client is identified. The library defaults to <code>kev.cr/&lt;version&gt; (+https://github.com/hahwul/kev.cr)</code>.</p>
+<h2 id="error-handling">Error handling</h2>
+<table>
+<thead>
+<tr>
+<th>Failure</th>
+<th>Exception</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DNS / connect / TLS errors</td>
+<td><code>KEV::FetchError</code></td>
+</tr>
+<tr>
+<td>Non-2xx response</td>
+<td><code>KEV::FetchError</code> (status code embedded in the message)</td>
+</tr>
+<tr>
+<td>Body present but not JSON</td>
+<td><code>JSON::ParseException</code></td>
+</tr>
+<tr>
+<td>JSON valid but schema-malformed</td>
+<td><code>KEV::ParseError</code></td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-crystal hljs"><span class="hljs-keyword">begin</span>
+  catalog <span class="hljs-operator">=</span> <span class="hljs-variable constant_">KEV</span>.fetch
+<span class="hljs-keyword">rescue</span> ex : <span class="hljs-variable constant_">KEV::FetchError</span>
+  <span class="hljs-variable constant_">STDERR</span>.puts <span class="hljs-string">&quot;transport error: </span><span class="hljs-subst">#{</span>ex.message<span class="hljs-subst">}</span><span class="hljs-string">&quot;</span>
+  exit <span class="hljs-number">1</span>
+<span class="hljs-keyword">end</span>
+</code></pre>
+<h2 id="redirects-are-not-followed">Redirects are not followed</h2>
+<p><code>KEV::Client</code> deliberately does <strong>not</strong> follow redirects by default. CISA's feed URL has been stable, and a silent follow could route the client to an attacker-controlled host if the upstream is ever compromised. A <code>301</code> / <code>302</code> / <code>303</code> / <code>307</code> / <code>308</code> surfaces as a <code>FetchError</code> so you notice and update your configuration; pass <code>max_redirects:</code> to opt in. <code>304 Not Modified</code> is never treated as a redirect — it carries no <code>Location</code>.</p>
+<p>If you need to point the client at a known mirror or proxy, pass that URL to <code>KEV::Client.new(url: ...)</code> directly.</p>
+<h2 id="persisting-between-fetches">Persisting between fetches</h2>
+<p>If you want to keep the conditional-fetch state across process restarts, serialize <code>client.last_etag</code> and <code>client.last_modified</code> and pass them back manually — there is no automatic disk cache (and adding one would couple this library to a filesystem layout).</p>
+<pre><code class="language-crystal hljs"><span class="hljs-variable constant_">File</span>.write(<span class="hljs-string">&quot;kev.etag&quot;</span>, client.last_etag.to_s) <span class="hljs-keyword">if</span> client.last_etag
+</code></pre>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><strong><a href="/api-reference/client/">Client API reference</a></strong> — full constructor and method list.</li>
+<li><strong><a href="/api-reference/errors/">Errors</a></strong> — exception hierarchy.</li>
+</ul>
+
+    
+    <nav class="page-nav" aria-label="Adjacent pages">
+      
+      <a class="page-nav-link page-nav-prev" href="https://kev.cr.hahwul.com/user-guide/queries/" rel="prev">
+        <span class="page-nav-label">Previous</span>
+        <span class="page-nav-title">Queries &amp; Filters</span>
+      </a>
+      
+      
+      <a class="page-nav-link page-nav-next" href="https://kev.cr.hahwul.com/user-guide/json/" rel="next">
+        <span class="page-nav-label">Next</span>
+        <span class="page-nav-title">JSON Round-Trip</span>
+      </a>
+      
+    </nav>
+    
+    <div class="docs-footer">
+      <p>kev.cr documentation</p>
+      <div class="docs-footer-links">
+        <a href="https://github.com/hahwul/kev.cr">GitHub</a>
+        <a href="https://github.com/hahwul/hwaro">Built with Hwaro</a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="https://kev.cr.hahwul.com/js/search.js"></script>
+<script>
+(function () {
+  var KEY = "hwaro-theme";
+  var MODES = ["auto", "light", "dark"];
+  var root = document.documentElement;
+  var btn = document.querySelector(".theme-toggle");
+  if (!btn) return;
+  function apply(mode) {
+    if (mode === "auto") {
+      root.removeAttribute("data-theme");
+      try { localStorage.removeItem(KEY); } catch (e) {}
+    } else {
+      root.setAttribute("data-theme", mode);
+      try { localStorage.setItem(KEY, mode); } catch (e) {}
+    }
+    btn.setAttribute("data-mode", mode);
+    btn.setAttribute("aria-label", "Theme: " + mode);
+    btn.title = "Theme: " + mode;
+  }
+  var stored = "auto";
+  try { var t = localStorage.getItem(KEY); if (t === "light" || t === "dark") stored = t; } catch (e) {}
+  btn.addEventListener("click", function () {
+    apply(MODES[(MODES.indexOf(btn.getAttribute("data-mode")) + 1) % MODES.length]);
+  });
+  apply(stored);
+})();
+(function () {
+  var btn = document.querySelector(".nav-toggle");
+  var scrim = document.querySelector(".sidebar-scrim");
+  var sidebar = document.getElementById("sidebar");
+  if (!btn) return;
+  function set(open) {
+    document.body.classList.toggle("nav-open", open);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  btn.addEventListener("click", function () {
+    set(!document.body.classList.contains("nav-open"));
+  });
+  if (scrim) scrim.addEventListener("click", function () { set(false); });
+  if (sidebar) sidebar.addEventListener("click", function (e) {
+    if (e.target.closest("a")) set(false);
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") set(false);
+  });
+})();
+</script>
+
+</body>
+</html>
