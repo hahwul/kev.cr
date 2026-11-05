@@ -488,10 +488,11 @@ module KEV
       false
     end
 
-    # Emit the catalog in the canonical CSV form (matches CISA's CSV
-    # mirror byte-for-byte except where input was synthesized — the CSV
-    # has no metadata, so `catalog_version` / `date_released` are
-    # discarded). Round-trips through `Catalog.parse_csv`.
+    # Emit the catalog in the canonical CSV form: CISA's column order and
+    # cell values, so it matches CISA's CSV mirror field-for-field (not
+    # byte-for-byte — CISA quotes some cells that need no quoting). The
+    # CSV has no metadata, so `catalog_version` / `date_released` are
+    # discarded. Round-trips through `Catalog.parse_csv`.
     def to_csv : String
       ::CSV.build do |csv|
         csv.row(CSV_HEADERS)
@@ -546,7 +547,9 @@ module KEV
     # An impossible instant (`"2024-02-30T00:00:00Z"`, `"…T25:00:00Z"`) is
     # well-formed enough for the parser to reach `Time.utc`, which raises a
     # bare `ArgumentError` rather than a `Time::Format::Error` — catch both
-    # so neither escapes as a non-KEV exception.
+    # so neither escapes as a non-KEV exception. An offset outside what
+    # `Time::Location` supports (`"…+99:99"`) raises a third class,
+    # `Time::Location::InvalidTimezoneOffsetError` (a `Time::Error`).
     #
     # The parser ignores trailing input, so the RFC 3339 shape (`format:
     # date-time`) is gated first — else `"…T00:00:00Zjunk"` parses clean.
@@ -555,7 +558,7 @@ module KEV
         raise ParseError.new("malformed dateReleased '#{raw}'")
       end
       Time.parse_iso8601(raw)
-    rescue ex : Time::Format::Error | ArgumentError
+    rescue ex : Time::Format::Error | Time::Error | ArgumentError
       raise ParseError.new("malformed dateReleased '#{raw}': #{ex.message}")
     end
 

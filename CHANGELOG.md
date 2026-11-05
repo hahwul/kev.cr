@@ -4,6 +4,26 @@
 
 ### Fixed
 
+- **A truncated download parsed as a smaller catalog.** `HTTP::Client`
+  returns whatever arrived before the peer closed without checking it
+  against `Content-Length`, so a connection dropped at a row boundary made
+  `Client#fetch_csv` return a catalog silently missing every later row. A
+  body short of its `Content-Length` is now a retried `FetchError`. (A body
+  sent with no length at all ends at close by definition and cannot be
+  checked.)
+- **Garbled responses escaped `FetchError`.** A gzip body cut short (CISA
+  serves the feed gzip-encoded) raised `Compress::Deflate::Error`, and a
+  non-HTTP reply or bad `Content-Length` raised a bare `Exception` /
+  `ArgumentError`. The truncated gzip body is now retried like a dropped
+  connection; a malformed reply fails at once. Both raise `KEV::FetchError`.
+- **`dateReleased` with an out-of-range offset escaped `KEV::Error`.**
+  `"…T00:00:00+99:99"` passed the RFC 3339 shape check, then
+  `Time::Location` raised `InvalidTimezoneOffsetError` — through
+  `KEV.parse?` too. It is now a `KEV::ParseError`.
+- **`has_cwe?` / `by_cwe` missed CWE numbers past `Int32`.** The schema's
+  `^CWE-([0-9])+$` bounds the digits nowhere, but the lookup compared via
+  `Int32`, so such a code did not match even itself. Numbers are now
+  compared as digit strings.
 - **`forensicTriage` was dropped.** The CISA schema added the property for
   BOD 26-04 and every live-feed entry (and a CSV column) carries it, but it
   was discarded on parse — `to_json`, `to_h`, and `to_csv` lost it, and

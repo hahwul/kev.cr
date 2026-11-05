@@ -1,3 +1,4 @@
+require "compress/gzip"
 require "http/client"
 require "openssl"
 require "socket"
@@ -265,8 +266,11 @@ module KEV
           end
 
           return response
-        rescue ex : IO::Error | Socket::Error | OpenSSL::SSL::Error
-          # IO::TimeoutError descends from IO::Error, so timeouts land here.
+        rescue ex : IO::Error | Socket::Error | OpenSSL::SSL::Error | Compress::Deflate::Error | Compress::Gzip::Error
+          # IO::TimeoutError descends from IO::Error, so timeouts land here,
+          # as does a body cut short of its `Content-Length` (see
+          # `perform_request`). The stdlib reports a gzip body cut short —
+          # CISA serves the feed gzip-encoded — as a `Compress` error.
           if attempt > @max_retries
             raise FetchError.new("KEV feed request to #{target_url} failed: #{ex.message}")
           end
@@ -280,10 +284,35 @@ module KEV
       begin
         client.connect_timeout = connect_timeout
         client.read_timeout = read_timeout
-        client.get(uri.request_target, headers: headers)
+        response = client.get(uri.request_target, headers: headers)
+        check_complete_body(response)
+        response
+      rescue ex : IO::Error | Socket::Error | OpenSSL::SSL::Error | Compress::Deflate::Error | Compress::Gzip::Error
+        raise ex # transient — `request_with_retry` retries these
+      rescue ex
+        # A reply that is not well-formed HTTP — a garbled status line, an
+        # unsupported version, an unparseable `Content-Length` — surfaces
+        # from the stdlib as a bare `Exception` / `ArgumentError`. Another
+        # attempt would read the same bytes, so fail at once.
+        raise FetchError.new("KEV feed at #{uri} sent a malformed HTTP response: #{ex.message}")
       ensure
         client.close
       end
+    end
+
+    # `HTTP::Client` hands back whatever arrived before the peer closed,
+    # without checking it against `Content-Length` — so a dropped connection
+    # yields a silently short body (for the CSV feed, a catalog missing every
+    # row past the cut). The header still describes the body only when it is
+    # neither chunked (RFC 9112 §6.1: `Transfer-Encoding` overrides it) nor
+    # decompressed (the stdlib drops it then), so a shortfall is truncation.
+    private def check_complete_body(response : HTTP::Client::Response) : Nil
+      return unless response.success?
+      return if response.headers.has_key?("Transfer-Encoding")
+      # `get?` + `first`: `[]?` joins repeated (matching) values with ",".
+      expected = response.headers.get?("Content-Length").try(&.first.to_u64?) || return
+      got = response.body.bytesize
+      raise IO::EOFError.new("response body truncated: got #{got} of #{expected} bytes") if got < expected
     end
 
     # Parse a `Retry-After` header. Supports both the delay-seconds form

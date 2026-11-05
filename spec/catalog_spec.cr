@@ -85,6 +85,15 @@ describe KEV::Catalog do
       end
     end
 
+    it "raises ParseError on a dateReleased offset Time::Location cannot hold" do
+      # `+99:99` passes the shape check, then `Time::Location` raises
+      # `InvalidTimezoneOffsetError`, which is neither a `Time::Format::Error`
+      # nor an `ArgumentError`.
+      json = %({"catalogVersion":"1.0","dateReleased":"2024-01-01T00:00:00+99:99","count":0,"vulnerabilities":[]})
+      expect_raises(KEV::ParseError, /dateReleased/) { KEV::Catalog.parse(json) }
+      KEV::Catalog.parse?(json).should be_nil
+    end
+
     it "raises MissingFieldError when catalogVersion is missing" do
       expect_raises(KEV::MissingFieldError, /catalogVersion/) do
         KEV::Catalog.parse(%({"dateReleased": "2024-01-01T00:00:00Z", "count": 0, "vulnerabilities": []}))
