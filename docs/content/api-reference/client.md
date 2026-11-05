@@ -51,6 +51,8 @@ These are used automatically by `fetch_if_modified` and can be persisted manuall
 |---------|-----------|
 | DNS / connect / TLS error | `KEV::FetchError` (wraps `IO::Error`, `Socket::Error`, or `OpenSSL::SSL::Error`) |
 | Non-2xx response (incl. 3xx — see below) | `KEV::FetchError` |
+| Body short of its `Content-Length`, or a gzip body cut short | `KEV::FetchError` (retried like a connection error) |
+| Reply that is not well-formed HTTP | `KEV::FetchError` (not retried) |
 | Body is not JSON | `JSON::ParseException` |
 | JSON valid but schema-malformed | `KEV::ParseError` |
 

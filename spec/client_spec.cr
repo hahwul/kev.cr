@@ -1,5 +1,6 @@
 require "./spec_helper"
 require "http/server"
+require "compress/gzip"
 
 # Spins up a localhost `HTTP::Server` on an ephemeral port for the duration
 # of the block. The handler closes over a per-request counter and the
@@ -57,6 +58,26 @@ end
 # over its own state (e.g. a per-request counter), which lets retry tests
 # script a sequence of responses — "fail twice, then succeed" — without
 # touching the canonical fixture server above.
+# Serves one canned raw HTTP response per connection from a bare
+# `TCPServer`, for wire-level failures `HTTP::Server` refuses to produce
+# (garbled status lines, bodies cut short of their `Content-Length`).
+private def with_raw_server(response : Bytes, &)
+  server = TCPServer.new("127.0.0.1", 0)
+  spawn do
+    while client = server.accept?
+      client.gets("\r\n\r\n")
+      client.write(response)
+      client.close
+    end
+  end
+
+  begin
+    yield "http://127.0.0.1:#{server.local_address.port}/feed.json"
+  ensure
+    server.close
+  end
+end
+
 private def with_scripted_server(handler : HTTP::Server::Context ->, &)
   server = HTTP::Server.new { |context| handler.call(context) }
   address = server.bind_tcp("127.0.0.1", 0)
@@ -411,6 +432,64 @@ describe KEV::Client do
         delay = client.backoff_delay(attempt)
         delay.should be >= KEV::Client::MAX_BACKOFF
         delay.should be <= ceiling
+      end
+    end
+
+    it "raises FetchError on a body cut short of its Content-Length" do
+      # `HTTP::Client` returns whatever arrived before the peer closed, so
+      # a dropped connection used to parse as a short (but valid) CSV.
+      csv = KEV::Catalog.parse(SpecFixtures.sample_catalog_json).to_csv
+      cut = csv.byte_index("\nCVE-", csv.bytesize // 2).not_nil! + 1
+      raw = "HTTP/1.1 200 OK\r\nContent-Length: #{csv.bytesize}\r\n\r\n#{csv.byte_slice(0, cut)}"
+      KEV::Catalog.parse_csv(csv.byte_slice(0, cut)).size.should be < KEV::Catalog.parse_csv(csv).size
+
+      with_raw_server(raw.to_slice) do |url|
+        expect_raises(KEV::FetchError, /truncated/) do
+          KEV::Client.new(url, max_retries: 0).fetch_csv
+        end
+      end
+    end
+
+    it "checks the first of repeated matching Content-Length headers" do
+      body = SpecFixtures.sample_catalog_json
+      raw = "HTTP/1.1 200 OK\r\nContent-Length: #{body.bytesize}\r\nContent-Length: #{body.bytesize}\r\n\r\n#{body.byte_slice(0, 10)}"
+      with_raw_server(raw.to_slice) do |url|
+        expect_raises(KEV::FetchError, /truncated/) { KEV::Client.new(url, max_retries: 0).fetch }
+      end
+    end
+
+    it "ignores a stale Content-Length on a chunked body" do
+      # RFC 9112 §6.1: Transfer-Encoding overrides Content-Length.
+      body = SpecFixtures.sample_catalog_json
+      raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: #{body.bytesize + 100}\r\n\r\n" \
+            "#{body.bytesize.to_s(16)}\r\n#{body}\r\n0\r\n\r\n"
+      with_raw_server(raw.to_slice) do |url|
+        KEV::Client.new(url, max_retries: 0).fetch.size.should eq(SpecFixtures.sample_catalog.size)
+      end
+    end
+
+    it "raises FetchError on a truncated gzip body" do
+      io = IO::Memory.new
+      Compress::Gzip::Writer.open(io, &.print(SpecFixtures.sample_catalog_json))
+      gz = io.to_slice
+      head = "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: #{gz.size}\r\n\r\n"
+      raw = IO::Memory.new
+      raw << head
+      raw.write(gz[0, gz.size // 2])
+
+      with_raw_server(raw.to_slice) do |url|
+        expect_raises(KEV::FetchError) { KEV::Client.new(url, max_retries: 0).fetch }
+      end
+    end
+
+    it "raises FetchError on a response that is not HTTP" do
+      ["garbage\r\n\r\n", "HTTP/1.1 abc OK\r\n\r\n", "HTTP/1.1 200 OK\r\nContent-Length: abc\r\n\r\n{}"].each do |raw|
+        with_raw_server(raw.to_slice) do |url|
+          # Not retried: another attempt would read the same bytes.
+          expect_raises(KEV::FetchError, /malformed HTTP response/) do
+            KEV::Client.new(url, max_retries: 3, retry_backoff: 10.seconds).fetch
+          end
+        end
       end
     end
 

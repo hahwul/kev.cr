@@ -59,6 +59,7 @@ A descriptive `User-Agent` is recommended — CISA may reach out to maintainers 
 |---------|-----------|
 | DNS / connect / TLS errors | `KEV::FetchError` |
 | Non-2xx response | `KEV::FetchError` (status code embedded in the message) |
+| Truncated or garbled response | `KEV::FetchError` |
 | Body present but not JSON | `JSON::ParseException` |
 | JSON valid but schema-malformed | `KEV::ParseError` |
 
