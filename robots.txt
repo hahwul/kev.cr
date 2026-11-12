@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://kev.cr.hahwul.com/sitemap.xml

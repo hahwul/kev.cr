@@ -1,0 +1,27 @@
+# kev.cr
+
+> A Crystal implementation of the CISA Known Exploited Vulnerabilities (KEV) catalog
+
+This is the documentation for kev.cr, a Crystal library that parses, queries, fetches, and serializes the CISA Known Exploited Vulnerabilities (KEV) catalog. See https://www.cisa.gov/known-exploited-vulnerabilities-catalog for the upstream feed.
+
+## Pages
+
+- [kev.cr](https://kev.cr.hahwul.com/): A Crystal client for the CISA Known Exploited Vulnerabilities catalog
+
+## API Reference
+
+- [Catalog](https://kev.cr.hahwul.com/api-reference/catalog/): The KEV::Catalog class — collection-level operations on a parsed feed
+- [Client](https://kev.cr.hahwul.com/api-reference/client/): HTTPS fetcher for the live CISA KEV feed
+- [Errors](https://kev.cr.hahwul.com/api-reference/errors/): Exception hierarchy raised by kev.cr
+- [Query](https://kev.cr.hahwul.com/api-reference/query/): Chainable filter builder over a list of Vulnerabilities
+- [RansomwareUse](https://kev.cr.hahwul.com/api-reference/ransomware-use/): Enum modelling the knownRansomwareCampaignUse field
+- [Vulnerability](https://kev.cr.hahwul.com/api-reference/vulnerability/): The KEV::Vulnerability class — one entry from the catalog
+
+## User Guide
+
+- [Basic Usage](https://kev.cr.hahwul.com/user-guide/basic-usage/): Lookups, predicates, equality, and ordering on a parsed KEV catalog
+- [Fetching the Live Feed](https://kev.cr.hahwul.com/user-guide/fetching/): Use KEV::Client to pull and poll the CISA KEV feed over HTTPS
+- [Getting Started](https://kev.cr.hahwul.com/user-guide/getting-started/): Install kev.cr and parse your first CISA KEV feed
+- [JSON Round-Trip](https://kev.cr.hahwul.com/user-guide/json/): Serialize and re-parse KEV data losslessly against the upstream feed
+- [Queries & Filters](https://kev.cr.hahwul.com/user-guide/queries/): Chainable Query builder over a KEV catalog
+
