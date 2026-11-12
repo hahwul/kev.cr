@@ -104,6 +104,28 @@ describe KEV::Catalog do
       end
     end
 
+    it "accepts a leap-second dateReleased, clamped to :59" do
+      # RFC 3339 §5.7 allows second 60 at the end of a month; `Time` cannot
+      # hold it, so it is read as :59 (as Java's Instant.parse does).
+      {
+        "2016-12-31T23:59:60Z"      => Time.utc(2016, 12, 31, 23, 59, 59),
+        "2015-06-30T23:59:60.5z"    => Time.utc(2015, 6, 30, 23, 59, 59, nanosecond: 500_000_000),
+        "1990-12-31T15:59:60-08:00" => Time.utc(1990, 12, 31, 23, 59, 59), # RFC 3339 §5.8 example
+        "2017-01-01T05:44:60+05:45" => Time.utc(2016, 12, 31, 23, 59, 59),
+      }.each do |raw, want|
+        json = %({"catalogVersion":"1.0","dateReleased":#{raw.to_json},"count":0,"vulnerabilities":[]})
+        KEV::Catalog.parse(json).date_released.should eq(want)
+      end
+    end
+
+    it "rejects a leap second anywhere but the last second of a UTC month" do
+      ["2016-12-31T23:59:61Z", "2016-12-31T23:58:60Z", "2016-12-31T22:59:60Z", "2016-12-30T23:59:60Z",
+       "2016-12-31T23:59:60+01:00", "2024-01-01T00:00:60Z"].each do |raw|
+        json = %({"catalogVersion":"1.0","dateReleased":#{raw.to_json},"count":0,"vulnerabilities":[]})
+        expect_raises(KEV::ParseError, /dateReleased/) { KEV::Catalog.parse(json) }
+      end
+    end
+
     it "accepts a lowercase t and z in dateReleased" do
       # RFC 3339 §5.6 NOTE: "T" and "Z" may alternatively be lower case.
       json = %({"catalogVersion":"1.0","dateReleased":"2024-01-01t12:00:00.5z","count":0,"vulnerabilities":[]})

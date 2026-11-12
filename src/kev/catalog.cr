@@ -543,9 +543,9 @@ module KEV
     # minutes 00-59, in the offset too. The stdlib parser rolls an
     # out-of-range value over (`T24:00:00Z` → next day, `+05:75` →
     # `+06:15`) instead of rejecting it. `T` and `Z` may be lower case.
-    # The leap second `:60` the RFC allows is rejected: `Time` cannot
-    # represent it.
-    private DATETIME_PATTERN = /\A[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\z/
+    # Seconds run 00-60; `:60` is the leap second, checked in
+    # `parse_datetime`.
+    private DATETIME_PATTERN = /\A[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:(?:[0-5][0-9]|60)(?:\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\z/
 
     # CISA emits ISO-8601 with a `Z` suffix and a fractional-seconds field
     # whose width drifts — the feed has been seen with 3 *and* 4 digits
@@ -563,11 +563,27 @@ module KEV
     #
     # The parser ignores trailing input, so the RFC 3339 shape (`format:
     # date-time`) is gated first — else `"…T00:00:00Zjunk"` parses clean.
+    #
+    # `Time` cannot hold a leap second, so `:60` is parsed as `:59` (the
+    # fraction kept), as Java's `Instant.parse` does. RFC 3339 §5.7 allows
+    # it only as the last second of a month, the point "shifted by the zone
+    # offset" (`1990-12-31T15:59:60-08:00`), so the clamped instant must be
+    # 23:59:59 UTC on a month's last day. The leap-second table itself is
+    # not checked: future leap seconds are announced only months ahead.
     private def self.parse_datetime(raw : String) : Time
       unless DATETIME_PATTERN.matches?(raw)
         raise ParseError.new("malformed dateReleased '#{raw}'")
       end
-      Time.parse_iso8601(raw.upcase) # it only knows upper-case `T`/`Z`
+      leap = raw[17, 2] == "60"
+      # it only knows upper-case `T`/`Z`
+      time = Time.parse_iso8601(leap ? "#{raw[0, 17]}59#{raw[19..]}".upcase : raw.upcase)
+      if leap
+        utc = time.to_utc
+        unless utc.hour == 23 && utc.minute == 59 && utc.day == Time.days_in_month(utc.year, utc.month)
+          raise ParseError.new("malformed dateReleased '#{raw}': leap second not at the end of a UTC month")
+        end
+      end
+      time
     rescue ex : Time::Format::Error | Time::Error | ArgumentError
       raise ParseError.new("malformed dateReleased '#{raw}': #{ex.message}")
     end

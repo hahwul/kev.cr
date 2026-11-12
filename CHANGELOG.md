@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- **A leap-second `dateReleased` raised `KEV::ParseError`.** RFC 3339
+  allows second `60`, but `Time` cannot hold it. `…T23:59:60Z` is now
+  accepted and clamped to `:59`, as Java's `Instant.parse` does. Per
+  RFC 3339 §5.7 it must fall on the last second of a month in UTC (after
+  applying the offset); any other `:60`, and second `61`+, still raise.
 - **`overdue?` raised on a `dueDate` of `9999-12-31`.** The check added a
   day to the due date, which lies past `Time`'s range for that schema-valid
   date, so `ArgumentError` escaped `overdue?` and with it `stats`,
