@@ -51,14 +51,12 @@ module KEV
 
     # Substring match against `vulnerability_name` (case-insensitive).
     def name_matches(substr : String) : Query
-      rx = Regex.new(Regex.escape(substr), Regex::Options::IGNORE_CASE)
-      chain(&.vulnerability_name.matches?(rx))
+      chain { |v| Query.icontains?(v.vulnerability_name, substr) }
     end
 
     # Substring match against `short_description` (case-insensitive).
     def description_matches(substr : String) : Query
-      rx = Regex.new(Regex.escape(substr), Regex::Options::IGNORE_CASE)
-      chain(&.short_description.matches?(rx))
+      chain { |v| Query.icontains?(v.short_description, substr) }
     end
 
     # Filter by CWE code (`"CWE-79"` or `"79"`).
@@ -105,8 +103,8 @@ module KEV
     # entry whose deadline is *today* still counts as upcoming — see
     # `Vulnerability#overdue?`.
     def due_within(span : Time::Span, now : Time = Time.utc) : Query
-      cutoff = now + span
-      chain { |v| !v.overdue?(now) && v.due_date <= cutoff }
+      # See `Catalog#due_within` for why this is not `now + span`.
+      chain { |v| !v.overdue?(now) && v.due_date - now <= span }
     end
 
     # Filter by CVE year (the YYYY portion of the CVE id).
@@ -140,6 +138,13 @@ module KEV
 
     def last? : Vulnerability?
       vulnerabilities.last?
+    end
+
+    # Case-insensitive substring test shared with `Catalog#search`. Not a
+    # `Regex`: PCRE raises `ArgumentError` when either string is not valid
+    # UTF-8, and `downcase` maps such bytes to U+FFFD instead.
+    protected def self.icontains?(haystack : String, needle : String) : Bool
+      haystack.downcase.includes?(needle.downcase)
     end
 
     private def chain(&block : Vulnerability -> Bool) : Query
