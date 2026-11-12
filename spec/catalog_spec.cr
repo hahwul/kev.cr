@@ -94,6 +94,36 @@ describe KEV::Catalog do
       KEV::Catalog.parse?(json).should be_nil
     end
 
+    it "rejects dateReleased fields outside the RFC 3339 ranges" do
+      # RFC 3339 §5.6: time-hour is 00-23 and time-minute 00-59, offsets
+      # included. The stdlib parser rolled these over instead — "T24:00:00Z"
+      # became the next day and "+05:75" became "+06:15".
+      ["2024-01-01T24:00:00Z", "2024-01-01T00:00:00+05:75", "2024-01-01T00:00:00+23:60", "2024-01-01T00:00:00+24:00"].each do |raw|
+        json = %({"catalogVersion":"1.0","dateReleased":#{raw.to_json},"count":0,"vulnerabilities":[]})
+        expect_raises(KEV::ParseError, /dateReleased/) { KEV::Catalog.parse(json) }
+      end
+    end
+
+    it "accepts a lowercase t and z in dateReleased" do
+      # RFC 3339 §5.6 NOTE: "T" and "Z" may alternatively be lower case.
+      json = %({"catalogVersion":"1.0","dateReleased":"2024-01-01t12:00:00.5z","count":0,"vulnerabilities":[]})
+      KEV::Catalog.parse(json).date_released.should eq(Time.utc(2024, 1, 1, 12, 0, 0, nanosecond: 500_000_000))
+    end
+
+    it "rejects strings that are not valid UTF-8" do
+      # RFC 8259 §8.1 requires UTF-8. The stdlib JSON parser lets invalid
+      # bytes through, and they later blew up `search` with a regex
+      # `ArgumentError`.
+      bad = String.new(Bytes[0x64, 0xFF])
+      entry = %({"cveID":"CVE-2024-1234","vendorProject":"a","product":"b","vulnerabilityName":"c","dateAdded":"2024-01-01","shortDescription":"#{bad}","requiredAction":"e","dueDate":"2024-01-02","cwes":[]})
+      json = %({"catalogVersion":"1.0","dateReleased":"2024-01-01T00:00:00Z","count":1,"vulnerabilities":[#{entry}]})
+      expect_raises(KEV::ParseError, /shortDescription.*UTF-8/) { KEV::Catalog.parse(json) }
+      KEV::Catalog.parse?(json).should be_nil
+      expect_raises(KEV::ParseError, /catalogVersion.*UTF-8/) do
+        KEV::Catalog.parse(%({"catalogVersion":"#{bad}","dateReleased":"2024-01-01T00:00:00Z","count":0,"vulnerabilities":[]}))
+      end
+    end
+
     it "raises MissingFieldError when catalogVersion is missing" do
       expect_raises(KEV::MissingFieldError, /catalogVersion/) do
         KEV::Catalog.parse(%({"dateReleased": "2024-01-01T00:00:00Z", "count": 0, "vulnerabilities": []}))
@@ -533,6 +563,12 @@ describe KEV::Catalog do
       expect_raises(KEV::InvalidValueError, /cveID/) do
         KEV::Catalog.parse_csv("#{header}\n,Apache,Log4j2,RCE,2021-12-10,d,a,2021-12-24,Known,,CWE-917\n")
       end
+    end
+    it "rejects a row that is not valid UTF-8" do
+      header = KEV::Catalog::CSV_HEADERS.join(",")
+      row = "CVE-2021-44228,Apache,Log4j2,RCE,2021-12-10,d#{String.new(Bytes[0xFF])},a,2021-12-24,Known,No,,CWE-917"
+      expect_raises(KEV::ParseError, /UTF-8/) { KEV::Catalog.parse_csv("#{header}\n#{row}\n") }
+      KEV::Catalog.parse_csv?("#{header}\n#{row}\n").should be_nil
     end
   end
 

@@ -126,6 +126,7 @@ module KEV
         # common use skips it. Parsing it instead reported the file as
         # broken with "invalid value '' for field 'cveID'".
         next if blank_row?(csv)
+        raise ParseError.new("CSV row #{vulns.size + 1} is not valid UTF-8") unless csv.row.to_a.all?(&.valid_encoding?)
 
         cve_id = csv["cveID"]
         unless Vulnerability::CVE_ID_PATTERN.matches?(cve_id)
@@ -535,7 +536,11 @@ module KEV
       end
     end
 
-    private DATETIME_PATTERN = /\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})\z/
+    # RFC 3339 §5.6 `date-time`, with its field ranges: hours 00-23 and
+    # minutes 00-59, in the offset too. The stdlib parser rolls an
+    # out-of-range value over (`T24:00:00Z` → next day, `+05:75` →
+    # `+06:15`) instead of rejecting it. `T` and `Z` may be lower case.
+    private DATETIME_PATTERN = /\A[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\z/
 
     # CISA emits ISO-8601 with a `Z` suffix and a fractional-seconds field
     # whose width drifts — the feed has been seen with 3 *and* 4 digits
@@ -557,7 +562,7 @@ module KEV
       unless DATETIME_PATTERN.matches?(raw)
         raise ParseError.new("malformed dateReleased '#{raw}'")
       end
-      Time.parse_iso8601(raw)
+      Time.parse_iso8601(raw.upcase) # it only knows upper-case `T`/`Z`
     rescue ex : Time::Format::Error | Time::Error | ArgumentError
       raise ParseError.new("malformed dateReleased '#{raw}': #{ex.message}")
     end
@@ -584,13 +589,13 @@ module KEV
 
     private def self.require_string(obj, key : String) : String
       raw = obj[key]? || raise MissingFieldError.new(key, "catalog")
-      raw.as_s? || raise ParseError.new("catalog field '#{key}' is not a string")
+      Vulnerability.utf8(raw.as_s? || raise(ParseError.new("catalog field '#{key}' is not a string")), key)
     end
 
     private def self.optional_string(obj, key : String) : String?
       raw = obj[key]?
       return if raw.nil? || raw.raw.nil?
-      raw.as_s? || raise ParseError.new("catalog field '#{key}' is not a string")
+      Vulnerability.utf8(raw.as_s? || raise(ParseError.new("catalog field '#{key}' is not a string")), key)
     end
 
     private def self.require_int(obj, key : String) : Int32

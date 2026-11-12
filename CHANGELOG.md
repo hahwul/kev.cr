@@ -4,6 +4,21 @@
 
 ### Fixed
 
+- **`overdue?` raised on a `dueDate` of `9999-12-31`.** The check added a
+  day to the due date, which lies past `Time`'s range for that schema-valid
+  date, so `ArgumentError` escaped `overdue?` and with it `stats`,
+  `summary`, `Catalog#overdue`, and `due_within`. Days are now compared
+  directly.
+- **`dateReleased` out-of-range fields were rolled over, not rejected.**
+  `"…T24:00:00Z"` parsed as the next day and an offset of `+05:75` as
+  `+06:15`. RFC 3339 §5.6 limits hours to 00-23 and minutes to 00-59, so
+  these now raise `KEV::ParseError`. A lower-case `t` / `z`, which RFC 3339
+  allows, is now accepted.
+- **Invalid UTF-8 was accepted, then crashed `search`.** The stdlib JSON
+  and CSV readers pass invalid bytes through, and `Catalog#search` /
+  `Query#name_matches` / `#description_matches` then raised a regex
+  `ArgumentError`. Such a string is now a `KEV::ParseError` at parse time
+  (RFC 8259 §8.1 requires UTF-8).
 - **A truncated download parsed as a smaller catalog.** `HTTP::Client`
   returns whatever arrived before the peer closed without checking it
   against `Content-Length`, so a connection dropped at a row boundary made
