@@ -4,6 +4,28 @@
 
 ### Fixed
 
+- **A body that failed to parse still updated the cache validators.**
+  `fetch`, `fetch_if_modified`, and `fetch_csv` stored the response's
+  `ETag` / `Last-Modified` before parsing it. When the parse raised, the
+  next `fetch_if_modified` sent that `ETag`, got `304`, and returned `nil`
+  ("unchanged") for a catalog the caller never received, until CISA next
+  changed the feed. Validators are now recorded only after a successful
+  parse.
+- **An unparseable URL escaped `FetchError`.** `URI.parse` raises
+  `URI::Error` on a non-numeric port and `OverflowError` on one past
+  `Int32`. Both escaped, for the configured URL and for a server-sent
+  redirect `Location`, and now raise `KEV::FetchError`. A port above 65535
+  is rejected up front instead of being retried as a connection error.
+- **`has_cwe?` raised `Regex::Error` on a long run of zeros.** In the
+  lookup pattern `0*([0-9]+)`, a run of zeros can be split many ways, so
+  a non-matching needle such as `"CWE-" + "0" * 5000 + "x"` backtracked
+  quadratically until PCRE hit its match limit. `by_cwe`, `Query#cwe`,
+  and `cwe_number` raised the same way. Leading zeros are now stripped
+  after the match.
+- **`has_cwe?` raised `ArgumentError` on an invalid-UTF-8 needle.** It
+  still used a `Regex`, which raises on such input, after the text
+  matchers stopped doing so. `by_cwe`, `Query#cwe`, and `cwe_number` were
+  affected too. They now answer `false` / `nil`.
 - **A leap-second `dateReleased` raised `KEV::ParseError`.** RFC 3339
   allows second `60`, but `Time` cannot hold it. `…T23:59:60Z` is now
   accepted and clamped to `:59` (fraction kept), the clamp Java's

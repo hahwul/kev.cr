@@ -221,6 +221,82 @@ describe KEV::Client do
     end
   end
 
+  it "records no validators for a body that fails to parse" do
+    # Recording the ETag before parsing made the next conditional GET
+    # answer 304, so `fetch_if_modified` returned nil ("unchanged") for a
+    # catalog the caller never got.
+    good = SpecFixtures.sample_catalog_json
+    seen = [] of String?
+    handler = ->(context : HTTP::Server::Context) do
+      seen << context.request.headers["If-None-Match"]?
+      if context.request.headers["If-None-Match"]? == %("v2")
+        context.response.status_code = 304
+      else
+        context.response.headers["ETag"] = %("v2")
+        context.response.print(seen.size == 1 ? good[0, good.size // 2] : good)
+      end
+      nil
+    end
+
+    with_scripted_server(handler) do |base|
+      client = KEV::Client.new("#{base}/feed.json")
+      expect_raises(JSON::ParseException) { client.fetch_if_modified }
+      client.last_etag.should be_nil
+      client.fetch_if_modified.not_nil!.size.should eq(4)
+      seen.should eq([nil, nil])
+      client.last_etag.should eq(%("v2"))
+    end
+  end
+
+  it "keeps the old validators when a changed body fails to parse" do
+    etag = %("v1")
+    handler = ->(context : HTTP::Server::Context) do
+      context.response.headers["ETag"] = etag
+      context.response.print(etag == %("v1") ? SpecFixtures.sample_catalog_json : "{}")
+      nil
+    end
+
+    with_scripted_server(handler) do |base|
+      client = KEV::Client.new("#{base}/feed.json")
+      client.fetch
+      etag = %("v2")
+      expect_raises(KEV::ParseError) { client.fetch }
+      client.last_etag.should eq(%("v1"))
+      expect_raises(KEV::ParseError) { client.fetch_csv }
+      client.last_etag.should eq(%("v1"))
+    end
+  end
+
+  it "raises FetchError on an unparseable URL" do
+    # `URI::Error`, then `OverflowError` from a port past `Int32`.
+    ["http://127.0.0.1:abc/feed.json", "http://127.0.0.1:99999999999/feed.json"].each do |url|
+      expect_raises(KEV::FetchError, /invalid KEV feed URL/) do
+        KEV::Client.new(url, max_retries: 0).fetch
+      end
+    end
+  end
+
+  it "rejects an out-of-range port without retrying" do
+    expect_raises(KEV::FetchError, /out-of-range port/) do
+      KEV::Client.new("http://127.0.0.1:65536/feed.json", retry_backoff: 10.seconds).fetch
+    end
+  end
+
+  it "raises FetchError on an unparseable redirect Location" do
+    # A server-sent header: `URI.parse` raised a bare `URI::Error`.
+    handler = ->(context : HTTP::Server::Context) do
+      context.response.status_code = 302
+      context.response.headers["Location"] = "http://127.0.0.1:abc/feed.json"
+      nil
+    end
+
+    with_scripted_server(handler) do |base|
+      expect_raises(KEV::FetchError, /redirect from .* has an invalid Location/) do
+        KEV::Client.new("#{base}/feed.json", max_redirects: 1).fetch
+      end
+    end
+  end
+
   it "raises FetchError on a non-2xx response" do
     with_stub_server do |_, base, _|
       expect_raises(KEV::FetchError, /500/) do

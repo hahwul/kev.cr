@@ -132,8 +132,7 @@ module KEV
     # that issues a canonical redirect.
     def fetch : Catalog
       response = get(extra_headers: HTTP::Headers.new)
-      capture_validators(response)
-      Catalog.parse(response.body)
+      parsed(response) { |body| Catalog.parse(body) }
     end
 
     # Conditional fetch using `If-None-Match` / `If-Modified-Since`.
@@ -154,8 +153,7 @@ module KEV
         refresh_validators(response)
         return
       end
-      capture_validators(response)
-      Catalog.parse(response.body)
+      parsed(response) { |body| Catalog.parse(body) }
     end
 
     # Convenience: one-shot fetch using a fresh client.
@@ -168,13 +166,26 @@ module KEV
     # `date_released` arguments flow through to `Catalog.parse_csv`.
     def fetch_csv(catalog_version : String = "csv", date_released : Time = Time.utc, title : String? = nil) : Catalog
       response = get(extra_headers: HTTP::Headers.new, accept: "text/csv")
-      capture_validators(response)
-      Catalog.parse_csv(response.body, catalog_version: catalog_version, date_released: date_released, title: title)
+      parsed(response) do |body|
+        Catalog.parse_csv(body, catalog_version: catalog_version, date_released: date_released, title: title)
+      end
     end
 
     # One-shot CSV fetch using a fresh client pointed at the CSV mirror.
     def self.fetch_csv(url : String = DEFAULT_CSV_URL) : Catalog
       new(url).fetch_csv
+    end
+
+    # Parse a 2xx body, then record its validators. Only in that order: a
+    # validator names the representation the caller now holds (RFC 9110
+    # §8.8), so recording one for a body that failed to parse — cut short
+    # with no `Content-Length` to catch it, say — made the next
+    # `fetch_if_modified` answer `nil` ("unchanged") for a catalog the
+    # caller never received, until CISA next changed the feed.
+    private def parsed(response : HTTP::Client::Response, & : String -> Catalog) : Catalog
+      catalog = yield response.body
+      capture_validators(response)
+      catalog
     end
 
     private def get(extra_headers : HTTP::Headers, accept_304 : Bool = false, accept : String = "application/json") : HTTP::Client::Response
@@ -188,7 +199,7 @@ module KEV
       accept : String,
       redirects_left : Int32,
     ) : HTTP::Client::Response
-      uri = URI.parse(target_url)
+      uri = parse_uri(target_url)
       unless {"http", "https"}.includes?(uri.scheme)
         raise FetchError.new("KEV feed URL must be http(s): #{target_url}")
       end
@@ -198,6 +209,11 @@ module KEV
       # `FetchError`, so check the host up front and keep the contract.
       if (host = uri.host).nil? || host.empty?
         raise FetchError.new("KEV feed URL has no host: #{target_url}")
+      end
+      # `URI.parse` accepts any port that fits an `Int32`; out of range it
+      # would fail as a retried "connection error".
+      if (port = uri.port) && !port.in?(0..65535)
+        raise FetchError.new("KEV feed URL has an out-of-range port: #{target_url}")
       end
 
       headers = HTTP::Headers{
@@ -225,7 +241,8 @@ module KEV
         end
         location = response.headers["Location"]?
         raise FetchError.new("KEV feed redirect from #{target_url} missing Location header") unless location
-        next_url = URI.parse(location).absolute? ? location : URI.parse(target_url).resolve(location).to_s
+        loc = parse_uri(location, "KEV feed redirect from #{target_url} has an invalid Location")
+        next_url = loc.absolute? ? location : uri.resolve(loc).to_s
         return do_get(next_url, extra_headers, accept_304, accept, redirects_left - 1)
       end
 
@@ -233,6 +250,15 @@ module KEV
         raise FetchError.new("KEV feed at #{target_url} returned HTTP #{response.status_code} #{response.status_message}")
       end
       response
+    end
+
+    # `URI.parse` raises `URI::Error` on a non-numeric port and
+    # `OverflowError` on one too long for `Int32`. Both the configured URL
+    # and a server-sent `Location` come through here.
+    private def parse_uri(raw : String, what : String = "invalid KEV feed URL") : URI
+      URI.parse(raw)
+    rescue ex : URI::Error | OverflowError
+      raise FetchError.new("#{what} #{raw.inspect}: #{ex.message}")
     end
 
     # Issue a single GET, transparently retrying transient failures —
