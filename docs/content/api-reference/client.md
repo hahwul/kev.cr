@@ -43,7 +43,7 @@ After each successful fetch the client captures the upstream cache validators:
 | `last_etag : String?` | Captured from the response `ETag` header; also refreshed from a `304`. |
 | `last_modified : String?` | Captured from the response `Last-Modified` header; also refreshed from a `304`. |
 
-These are used automatically by `fetch_if_modified` and can be persisted manually for cross-process caching.
+A body that fails to parse records nothing, so the previous validators stay in place. These are used automatically by `fetch_if_modified` and can be persisted manually for cross-process caching.
 
 ## Exception mapping
 
@@ -53,6 +53,7 @@ These are used automatically by `fetch_if_modified` and can be persisted manuall
 | Non-2xx response (incl. 3xx — see below) | `KEV::FetchError` |
 | Body short of its `Content-Length`, or a gzip body cut short | `KEV::FetchError` (retried like a connection error) |
 | Reply that is not well-formed HTTP | `KEV::FetchError` (not retried) |
+| Unparseable URL or redirect `Location` | `KEV::FetchError` (not retried) |
 | Body is not JSON | `JSON::ParseException` |
 | JSON valid but schema-malformed | `KEV::ParseError` |
 

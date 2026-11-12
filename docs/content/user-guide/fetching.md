@@ -35,6 +35,8 @@ later  = client.fetch_if_modified  # => nil if the feed has not changed
 
 A `304` still updates the stored validators with whatever it carries, so a long-lived poller follows the origin when it rotates an `ETag` instead of pinning the first pair it saw. Because a `304` need not repeat `Last-Modified`, a header the response omits leaves the stored value alone — unlike a `200`, which is a new representation and replaces both.
 
+Validators are recorded only once the body has parsed. A `200` whose body raises `JSON::ParseException` or `KEV::ParseError` leaves the stored pair as it was, so the next `fetch_if_modified` downloads the feed again instead of answering `nil` for a catalog you never received.
+
 ```crystal
 client.last_etag         # => "\"kev-v1\"" (or nil before first fetch)
 client.last_modified     # => "Wed, 15 May 2026 16:55:06 GMT" (or nil)
@@ -58,6 +60,7 @@ A descriptive `User-Agent` is recommended — CISA may reach out to maintainers 
 | Failure | Exception |
 |---------|-----------|
 | DNS / connect / TLS errors | `KEV::FetchError` |
+| Unparseable URL or redirect `Location` | `KEV::FetchError` |
 | Non-2xx response | `KEV::FetchError` (status code embedded in the message) |
 | Truncated or garbled response | `KEV::FetchError` |
 | Body present but not JSON | `JSON::ParseException` |
