@@ -77,7 +77,7 @@ File.write("kev-ransomware.json", subset.to_json)
 
 ## Known precision gotcha
 
-`dateReleased` arrives from CISA with 3- or 4-digit fractional seconds. The library parses up to nine fraction digits as published, and `to_json` writes back the narrowest of 3, 6, or 9 digits that keeps the stored precision, so a 4-digit input (`.6086Z`) round-trips as `.608600Z`.
+`dateReleased` arrives from CISA with 3- or 4-digit fractional seconds. The library keeps up to nine fraction digits as published, and `to_json` writes back the narrowest of 3, 6, or 9 digits that keeps the stored precision, so a 4-digit input (`.6086Z`) round-trips as `.608600Z`.
 
 A leap second (`…T23:59:60Z`, valid RFC 3339) is accepted but read as `:59`, since Crystal's `Time` cannot represent second 60; it writes back as `:59`. RFC 3339 §5.7 allows second 60 only as the last second of a month in UTC (shifted by the zone offset, so `15:59:60-08:00` is fine), so any other `:60`, or second 61 and up, raises `KEV::ParseError`.
 

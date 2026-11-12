@@ -116,6 +116,8 @@ describe KEV::Catalog do
         json = %({"catalogVersion":"1.0","dateReleased":#{raw.to_json},"count":0,"vulnerabilities":[]})
         KEV::Catalog.parse(json).date_released.should eq(want)
       end
+      json = %({"catalogVersion":"1.0","dateReleased":"2016-12-31T23:59:60Z","count":0,"vulnerabilities":[]})
+      KEV::Catalog.parse(json).to_json.should contain(%("dateReleased":"2016-12-31T23:59:59.000Z"))
     end
 
     it "rejects a leap second anywhere but the last second of a UTC month" do
