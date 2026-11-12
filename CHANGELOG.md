@@ -21,6 +21,10 @@
   quadratically until PCRE hit its match limit. `by_cwe`, `Query#cwe`,
   and `cwe_number` raised the same way. Leading zeros are now stripped
   after the match.
+- **`has_cwe?` raised `ArgumentError` on an invalid-UTF-8 needle.** It
+  still used a `Regex`, which raises on such input, after the text
+  matchers stopped doing so. `by_cwe`, `Query#cwe`, and `cwe_number` were
+  affected too. They now answer `false` / `nil`.
 - **A leap-second `dateReleased` raised `KEV::ParseError`.** RFC 3339
   allows second `60`, but `Time` cannot hold it. `…T23:59:60Z` is now
   accepted and clamped to `:59` (fraction kept), the clamp Java's
