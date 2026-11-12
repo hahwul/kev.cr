@@ -120,13 +120,20 @@ module KEV
       end
 
       vulns = [] of Vulnerability
+      row = 0
       while csv.next
         # A wholly empty row carries no record — it is the blank line a
         # stray trailing newline leaves behind, and every CSV reader in
         # common use skips it. Parsing it instead reported the file as
         # broken with "invalid value '' for field 'cveID'".
-        next if blank_row?(csv)
-        raise ParseError.new("CSV row #{vulns.size + 1} is not valid UTF-8") unless csv.row.to_a.all?(&.valid_encoding?)
+        row += 1
+        cells = csv.row.to_a
+        next if cells.all?(&.empty?)
+        # RFC 8259 §8.1 does not bind CSV, but the JSON feed this mirrors is
+        # UTF-8 and invalid bytes would leak into `to_json` output.
+        if i = cells.index { |c| !c.valid_encoding? }
+          raise ParseError.new("CSV data row #{row}: field '#{csv.headers[i]? || i}' is not valid UTF-8")
+        end
 
         cve_id = csv["cveID"]
         unless Vulnerability::CVE_ID_PATTERN.matches?(cve_id)
@@ -196,10 +203,6 @@ module KEV
 
     private def self.blank_to_nil(value : String) : String?
       value.empty? ? nil : value
-    end
-
-    private def self.blank_row?(csv : ::CSV) : Bool
-      csv.row.to_a.all?(&.empty?)
     end
 
     private def self.csv_cwes(raw : String, cve_id : String) : Array(String)
@@ -334,8 +337,9 @@ module KEV
     # "Not yet overdue" uses `Vulnerability#overdue?`, so an entry whose
     # deadline is *today* still counts as upcoming.
     def due_within(span : Time::Span, now : Time = Time.utc) : Array(Vulnerability)
-      cutoff = now + span
-      vulnerabilities.select { |v| !v.overdue?(now) && v.due_date <= cutoff }
+      # `due_date - now <= span`, not `due_date <= now + span`: the sum can
+      # land past `Time`'s range and raise.
+      vulnerabilities.select { |v| !v.overdue?(now) && v.due_date - now <= span }
     end
 
     # All distinct vendor names in the catalog, sorted.
@@ -363,13 +367,12 @@ module KEV
     # and `product`. Useful for a single "give me everything mentioning
     # log4j" hit without writing a custom `where` block.
     def search(query : String) : Array(Vulnerability)
-      rx = Regex.new(Regex.escape(query), Regex::Options::IGNORE_CASE)
       vulnerabilities.select do |v|
-        v.cve_id.matches?(rx) ||
-          v.vulnerability_name.matches?(rx) ||
-          v.short_description.matches?(rx) ||
-          v.vendor_project.matches?(rx) ||
-          v.product.matches?(rx)
+        Query.icontains?(v.cve_id, query) ||
+          Query.icontains?(v.vulnerability_name, query) ||
+          Query.icontains?(v.short_description, query) ||
+          Query.icontains?(v.vendor_project, query) ||
+          Query.icontains?(v.product, query)
       end
     end
 
@@ -540,6 +543,8 @@ module KEV
     # minutes 00-59, in the offset too. The stdlib parser rolls an
     # out-of-range value over (`T24:00:00Z` → next day, `+05:75` →
     # `+06:15`) instead of rejecting it. `T` and `Z` may be lower case.
+    # The leap second `:60` the RFC allows is rejected: `Time` cannot
+    # represent it.
     private DATETIME_PATTERN = /\A[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt](?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\.[0-9]+)?(?:[Zz]|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])\z/
 
     # CISA emits ISO-8601 with a `Z` suffix and a fractional-seconds field
@@ -589,13 +594,13 @@ module KEV
 
     private def self.require_string(obj, key : String) : String
       raw = obj[key]? || raise MissingFieldError.new(key, "catalog")
-      Vulnerability.utf8(raw.as_s? || raise(ParseError.new("catalog field '#{key}' is not a string")), key)
+      Vulnerability.utf8(raw.as_s? || raise(ParseError.new("catalog field '#{key}' is not a string")), "catalog field '#{key}'")
     end
 
     private def self.optional_string(obj, key : String) : String?
       raw = obj[key]?
       return if raw.nil? || raw.raw.nil?
-      Vulnerability.utf8(raw.as_s? || raise(ParseError.new("catalog field '#{key}' is not a string")), key)
+      Vulnerability.utf8(raw.as_s? || raise(ParseError.new("catalog field '#{key}' is not a string")), "catalog field '#{key}'")
     end
 
     private def self.require_int(obj, key : String) : Int32
