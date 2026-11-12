@@ -12,9 +12,10 @@
   changed the feed. Validators are now recorded only after a successful
   parse.
 - **An unparseable URL escaped `FetchError`.** `URI.parse` raises
-  `URI::Error` on, for example, a non-numeric port. That error escaped
-  for both the configured URL and a server-sent redirect `Location`. Both
-  now raise `KEV::FetchError`.
+  `URI::Error` on a non-numeric port and `OverflowError` on one past
+  `Int32`. Both escaped, for the configured URL and for a server-sent
+  redirect `Location`, and now raise `KEV::FetchError`. A port above 65535
+  is rejected up front instead of being retried as a connection error.
 - **`has_cwe?` raised `Regex::Error` on a long run of zeros.** In the
   lookup pattern `0*([0-9]+)`, a run of zeros can be split many ways, so
   a non-matching needle such as `"CWE-" + "0" * 5000 + "x"` backtracked

@@ -268,8 +268,17 @@ describe KEV::Client do
   end
 
   it "raises FetchError on an unparseable URL" do
-    expect_raises(KEV::FetchError, /invalid KEV feed URL/) do
-      KEV::Client.new("http://127.0.0.1:abc/feed.json", max_retries: 0).fetch
+    # `URI::Error`, then `OverflowError` from a port past `Int32`.
+    ["http://127.0.0.1:abc/feed.json", "http://127.0.0.1:99999999999/feed.json"].each do |url|
+      expect_raises(KEV::FetchError, /invalid KEV feed URL/) do
+        KEV::Client.new(url, max_retries: 0).fetch
+      end
+    end
+  end
+
+  it "rejects an out-of-range port without retrying" do
+    expect_raises(KEV::FetchError, /out-of-range port/) do
+      KEV::Client.new("http://127.0.0.1:65536/feed.json", retry_backoff: 10.seconds).fetch
     end
   end
 
@@ -282,7 +291,7 @@ describe KEV::Client do
     end
 
     with_scripted_server(handler) do |base|
-      expect_raises(KEV::FetchError, /invalid KEV feed URL/) do
+      expect_raises(KEV::FetchError, /redirect from .* has an invalid Location/) do
         KEV::Client.new("#{base}/feed.json", max_redirects: 1).fetch
       end
     end

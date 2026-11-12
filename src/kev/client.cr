@@ -199,8 +199,6 @@ module KEV
       accept : String,
       redirects_left : Int32,
     ) : HTTP::Client::Response
-      # `URI.parse` raises `URI::Error` (e.g. on a non-numeric port), both
-      # for the configured URL and for a server-sent `Location`.
       uri = parse_uri(target_url)
       unless {"http", "https"}.includes?(uri.scheme)
         raise FetchError.new("KEV feed URL must be http(s): #{target_url}")
@@ -211,6 +209,11 @@ module KEV
       # `FetchError`, so check the host up front and keep the contract.
       if (host = uri.host).nil? || host.empty?
         raise FetchError.new("KEV feed URL has no host: #{target_url}")
+      end
+      # `URI.parse` accepts any port that fits an `Int32`; out of range it
+      # would fail as a retried "connection error".
+      if (port = uri.port) && !port.in?(0..65535)
+        raise FetchError.new("KEV feed URL has an out-of-range port: #{target_url}")
       end
 
       headers = HTTP::Headers{
@@ -238,7 +241,8 @@ module KEV
         end
         location = response.headers["Location"]?
         raise FetchError.new("KEV feed redirect from #{target_url} missing Location header") unless location
-        next_url = parse_uri(location).absolute? ? location : uri.resolve(location).to_s
+        loc = parse_uri(location, "KEV feed redirect from #{target_url} has an invalid Location")
+        next_url = loc.absolute? ? location : uri.resolve(loc).to_s
         return do_get(next_url, extra_headers, accept_304, accept, redirects_left - 1)
       end
 
@@ -248,10 +252,13 @@ module KEV
       response
     end
 
-    private def parse_uri(raw : String) : URI
+    # `URI.parse` raises `URI::Error` on a non-numeric port and
+    # `OverflowError` on one too long for `Int32`. Both the configured URL
+    # and a server-sent `Location` come through here.
+    private def parse_uri(raw : String, what : String = "invalid KEV feed URL") : URI
       URI.parse(raw)
-    rescue ex : URI::Error
-      raise FetchError.new("invalid KEV feed URL #{raw.inspect}: #{ex.message}")
+    rescue ex : URI::Error | OverflowError
+      raise FetchError.new("#{what} #{raw.inspect}: #{ex.message}")
     end
 
     # Issue a single GET, transparently retrying transient failures —
